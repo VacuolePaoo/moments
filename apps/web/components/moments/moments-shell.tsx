@@ -2,8 +2,8 @@ export function MomentsShell({
   actions,
   children,
 }: {
-  actions: React.ReactNode
-  children: React.ReactNode
+  actions: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-background px-4 pt-12 pb-16 text-foreground">
@@ -14,5 +14,5 @@ export function MomentsShell({
         <main>{children}</main>
       </div>
     </div>
-  )
+  );
 }

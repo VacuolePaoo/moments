@@ -1,27 +1,27 @@
-"use client"
+"use client";
 
-import Link from "next/link"
+import Link from "next/link";
 
-import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 
-import type { MomentPost } from "./api"
-import { formatDateHeading, groupPostsByDate } from "./date"
-import { MomentItem } from "./moment-item"
+import type { MomentPost } from "./api";
+import { formatDateHeading, groupPostsByDate } from "./date";
+import { MomentItem } from "./moment-item";
 
 interface FeedProps {
-  posts: MomentPost[]
-  isAdmin: boolean
-  getToken: () => Promise<string | null>
-  showEdited?: boolean
-  highlightDate?: string | null
-  isInitialLoading?: boolean
-  isLoadingMore?: boolean
-  error?: string | null
-  onRetry?: () => void
-  onUpdated: (post: MomentPost) => void
-  onDelete: (post: MomentPost) => void
+  posts: MomentPost[];
+  isAdmin: boolean;
+  getToken: () => Promise<string | null>;
+  showEdited?: boolean;
+  highlightDate?: string | null;
+  isInitialLoading?: boolean;
+  isLoadingMore?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onUpdated: (post: MomentPost) => void;
+  onDelete: (post: MomentPost) => void;
 }
 
 export function Feed({
@@ -37,17 +37,17 @@ export function Feed({
   onUpdated,
   onDelete,
 }: FeedProps) {
-  if (isInitialLoading) return <FeedSkeleton />
+  if (isInitialLoading) return <FeedSkeleton />;
 
   if (error && posts.length === 0) {
-    return <FeedError message={error} onRetry={onRetry} />
+    return <FeedError message={error} onRetry={onRetry} />;
   }
 
   if (posts.length === 0) {
-    return <p className="text-muted-foreground">还没有内容</p>
+    return <p className="text-muted-foreground">还没有内容</p>;
   }
 
-  const groups = groupPostsByDate(posts)
+  const groups = groupPostsByDate(posts);
 
   return (
     <div>
@@ -58,7 +58,9 @@ export function Feed({
               id={group.date}
               data-moment-date={group.date}
               className={`mb-6 scroll-mt-8 w-fit rounded-md text-[1.602rem] leading-[1.5] font-semibold transition-colors ${
-                highlightDate === group.date ? "animate-in bg-muted px-2 fade-in-0 duration-700 -ml-2" : ""
+                highlightDate === group.date
+                  ? "animate-in bg-muted px-2 fade-in-0 duration-700 -ml-2"
+                  : ""
               }`}
             >
               <Link
@@ -88,10 +90,12 @@ export function Feed({
         ))}
       </div>
 
-      {error ? <FeedError message={error} onRetry={onRetry} className="mt-12" /> : null}
+      {error ? (
+        <FeedError message={error} onRetry={onRetry} className="mt-12" />
+      ) : null}
       {isLoadingMore ? <FeedSkeleton className="mt-12" /> : null}
     </div>
-  )
+  );
 }
 
 export function FeedSkeleton({ className = "" }: { className?: string }) {
@@ -101,7 +105,7 @@ export function FeedSkeleton({ className = "" }: { className?: string }) {
       <Skeleton className="h-4 w-full" />
       <Skeleton className="h-4 w-4/5" />
     </div>
-  )
+  );
 }
 
 function FeedError({
@@ -109,9 +113,9 @@ function FeedError({
   onRetry,
   className = "",
 }: {
-  message: string
-  onRetry?: () => void
-  className?: string
+  message: string;
+  onRetry?: () => void;
+  className?: string;
 }) {
   return (
     <div className={`flex items-center gap-3 ${className}`} role="alert">
@@ -122,5 +126,5 @@ function FeedError({
         </Button>
       ) : null}
     </div>
-  )
+  );
 }

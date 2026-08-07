@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { forwardRef, useEffect, useRef, useState } from "react"
-import { EllipsisIcon, Trash2Icon } from "lucide-react"
+import { forwardRef, useEffect, useRef, useState } from "react";
+import { EllipsisIcon, Trash2Icon } from "lucide-react";
 
 import {
   AlertDialog,
@@ -12,93 +12,100 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter } from "@/components/ui/card"
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Spinner } from "@/components/ui/spinner"
-import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/toast"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+} from "@/components/ui/dropdown-menu";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-import { createPost, type MomentPost } from "./api"
-import { publishDraftKey, readDraft, removeDraft, writeDraft } from "./drafts"
+import { createPost, type MomentPost } from "./api";
+import { publishDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 
 interface ComposerProps {
-  getToken: () => Promise<string | null>
-  onCreated: (post: MomentPost) => void
+  getToken: () => Promise<string | null>;
+  onCreated: (post: MomentPost) => void;
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
   function Composer({ getToken, onCreated }, ref) {
-    const [content, setContent] = useState("")
-    const [isSubmitting, setIsSubmitting] = useState(false)
-    const [draftStatus, setDraftStatus] = useState("保存草稿")
-    const [clearDialogOpen, setClearDialogOpen] = useState(false)
-    const statusTimer = useRef<number | null>(null)
-    const draftKey = publishDraftKey()
+    const [content, setContent] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [draftStatus, setDraftStatus] = useState("保存草稿");
+    const [clearDialogOpen, setClearDialogOpen] = useState(false);
+    const statusTimer = useRef<number | null>(null);
+    const draftKey = publishDraftKey();
 
     useEffect(() => {
-      const draft = readDraft(draftKey)
-      if (!draft?.content) return
-      setContent(draft.content)
-      toast.add({ type: "info", description: "已恢复草稿。" })
-    }, [draftKey])
+      const draft = readDraft(draftKey);
+      if (!draft?.content) return;
+      setContent(draft.content);
+      toast.add({ type: "info", description: "已恢复草稿。" });
+    }, [draftKey]);
 
     useEffect(() => {
-      if (!content) return
+      if (!content) return;
       const timer = window.setTimeout(() => {
-        setDraftStatus("自动保存")
-        const saved = writeDraft(draftKey, content)
-        if (statusTimer.current) window.clearTimeout(statusTimer.current)
+        setDraftStatus("自动保存");
+        const saved = writeDraft(draftKey, content);
+        if (statusTimer.current) window.clearTimeout(statusTimer.current);
         statusTimer.current = window.setTimeout(
           () => setDraftStatus(saved ? "保存成功" : "保存草稿"),
-          400
-        )
-        if (!saved) toast.add({ type: "error", description: "草稿保存失败。" })
-      }, 5000)
-      return () => window.clearTimeout(timer)
-    }, [content, draftKey])
+          400,
+        );
+        if (!saved) toast.add({ type: "error", description: "草稿保存失败。" });
+      }, 5000);
+      return () => window.clearTimeout(timer);
+    }, [content, draftKey]);
 
-    useEffect(() => () => {
-      if (statusTimer.current) window.clearTimeout(statusTimer.current)
-    }, [])
+    useEffect(
+      () => () => {
+        if (statusTimer.current) window.clearTimeout(statusTimer.current);
+      },
+      [],
+    );
 
     function saveDraftManually() {
-      const saved = writeDraft(draftKey, content)
-      setDraftStatus(saved ? "保存成功" : "保存草稿")
-      if (!saved) toast.add({ type: "error", description: "草稿保存失败。" })
+      const saved = writeDraft(draftKey, content);
+      setDraftStatus(saved ? "保存成功" : "保存草稿");
+      if (!saved) toast.add({ type: "error", description: "草稿保存失败。" });
     }
 
     function clearDraft() {
-      setContent("")
-      removeDraft(draftKey)
-      setDraftStatus("保存草稿")
-      setClearDialogOpen(false)
+      setContent("");
+      removeDraft(draftKey);
+      setDraftStatus("保存草稿");
+      setClearDialogOpen(false);
     }
 
     async function publish() {
-      if (!content.trim() || isSubmitting) return
-      setIsSubmitting(true)
+      if (!content.trim() || isSubmitting) return;
+      setIsSubmitting(true);
       try {
-        const token = await getToken()
-        if (!token) throw new Error("登录状态已失效。")
-        const post = await createPost(content, token)
-        onCreated(post)
-        setContent("")
-        removeDraft(draftKey)
-        setDraftStatus("保存草稿")
+        const token = await getToken();
+        if (!token) throw new Error("登录状态已失效。");
+        const post = await createPost(content, token);
+        onCreated(post);
+        setContent("");
+        removeDraft(draftKey);
+        setDraftStatus("保存草稿");
       } catch {
-        toast.add({ type: "error", description: "发布失败，请稍后重试。" })
+        toast.add({ type: "error", description: "发布失败，请稍后重试。" });
       } finally {
-        setIsSubmitting(false)
+        setIsSubmitting(false);
       }
     }
 
@@ -106,8 +113,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
       <>
         <form
           onSubmit={(event) => {
-            event.preventDefault()
-            void publish()
+            event.preventDefault();
+            void publish();
           }}
         >
           <Card>
@@ -122,13 +129,16 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
                     id="moment-composer"
                     value={content}
                     onChange={(event) => {
-                      setContent(event.target.value)
-                      setDraftStatus("保存草稿")
+                      setContent(event.target.value);
+                      setDraftStatus("保存草稿");
                     }}
                     onKeyDown={(event) => {
-                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                        event.preventDefault()
-                        void publish()
+                      if (
+                        (event.ctrlKey || event.metaKey) &&
+                        event.key === "Enter"
+                      ) {
+                        event.preventDefault();
+                        void publish();
                       }
                     }}
                     className="min-h-32 resize-none text-base leading-6 md:text-base"
@@ -192,7 +202,9 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>清空草稿？</AlertDialogTitle>
-              <AlertDialogDescription>清空后无法从当前浏览器恢复。</AlertDialogDescription>
+              <AlertDialogDescription>
+                清空后无法从当前浏览器恢复。
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
@@ -203,6 +215,6 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
           </AlertDialogContent>
         </AlertDialog>
       </>
-    )
-  }
-)
+    );
+  },
+);

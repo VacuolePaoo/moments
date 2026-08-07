@@ -21,9 +21,17 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="zh-CN" className={`${inter.className} h-full antialiased`} suppressHydrationWarning>
+    <html
+      lang="zh-CN"
+      className={`${inter.className} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: systemThemeScript }} />
       </head>

@@ -1,5 +1,5 @@
-import { MomentsHome } from "@/components/moments/home"
+import { MomentsHome } from "@/components/moments/home";
 
 export default function Home() {
-  return <MomentsHome />
+  return <MomentsHome />;
 }
