@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Moments API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Public read and Clerk-protected write API for a personal Moments site."
   },
   "servers": [
@@ -18,6 +18,10 @@
     {
       "name": "Posts",
       "description": "Public post reads and administrator mutations."
+    },
+    {
+      "name": "Dates",
+      "description": "Public Asia/Shanghai date-grouped reads and navigation."
     },
     {
       "name": "Authentication",
@@ -170,6 +174,55 @@
           "edited"
         ]
       },
+      "DateDetail": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+            "example": "2026-08-07"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Post"
+            }
+          },
+          "navigation": {
+            "type": "object",
+            "properties": {
+              "newerDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+                "example": "2026-08-07"
+              },
+              "olderDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+                "example": "2026-08-07"
+              }
+            },
+            "required": [
+              "newerDate",
+              "olderDate"
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "items",
+          "navigation"
+        ]
+      },
       "PostDetail": {
         "type": "object",
         "properties": {
@@ -247,6 +300,7 @@
   "paths": {
     "/health": {
       "get": {
+        "operationId": "healthCheck",
         "tags": [
           "System"
         ],
@@ -277,6 +331,7 @@
     },
     "/api/v1/posts": {
       "get": {
+        "operationId": "listPosts",
         "tags": [
           "Posts"
         ],
@@ -300,6 +355,18 @@
             },
             "required": false,
             "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor.",
+              "example": "2026-08-07"
+            },
+            "required": false,
+            "description": "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor.",
+            "name": "anchorDate",
             "in": "query"
           }
         ],
@@ -347,6 +414,7 @@
         }
       },
       "post": {
+        "operationId": "createPost",
         "tags": [
           "Posts"
         ],
@@ -430,8 +498,74 @@
         }
       }
     },
+    "/api/v1/dates/{date}": {
+      "get": {
+        "operationId": "getDateDetail",
+        "tags": [
+          "Dates"
+        ],
+        "summary": "Get all posts and adjacent dates for an Asia/Shanghai calendar date",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+              "example": "2026-08-07"
+            },
+            "required": true,
+            "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+            "name": "date",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Date detail and navigation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DateDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested date has no posts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid calendar date.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/posts/{id}": {
       "get": {
+        "operationId": "getPostById",
         "tags": [
           "Posts"
         ],
@@ -494,6 +628,7 @@
         }
       },
       "patch": {
+        "operationId": "updatePost",
         "tags": [
           "Posts"
         ],
@@ -601,6 +736,7 @@
         }
       },
       "delete": {
+        "operationId": "deletePost",
         "tags": [
           "Posts"
         ],
@@ -691,8 +827,119 @@
         }
       }
     },
+    "/api/v1/posts/{id}/restore": {
+      "post": {
+        "operationId": "restorePost",
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Restore a soft-deleted post",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stable post ID.",
+              "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+            },
+            "required": true,
+            "description": "Stable post ID.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Post restored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Post is not deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid post ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
+        "operationId": "getAuthStatus",
         "tags": [
           "Authentication"
         ],

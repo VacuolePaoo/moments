@@ -39,6 +39,8 @@ describe("Moments API", () => {
     expect(document.openapi).toBe("3.1.0");
     expect(document.paths).toHaveProperty("/api/v1/posts");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}");
+    expect(document.paths).toHaveProperty("/api/v1/posts/{id}/restore");
+    expect(document.paths).toHaveProperty("/api/v1/dates/{date}");
   });
 
   it("requires Clerk authentication for writes", async () => {
@@ -129,10 +131,118 @@ describe("Moments API", () => {
     const missingResponse = await app.request(`/api/v1/posts/${first.id}`, {}, env);
     expect(missingResponse.status).toBe(404);
 
+    const restoreResponse = await app.request(
+      `/api/v1/posts/${first.id}/restore`,
+      jsonRequest("POST"),
+      env,
+    );
+    expect(restoreResponse.status).toBe(200);
+    await expect(restoreResponse.json()).resolves.toMatchObject({
+      id: first.id,
+      content: "更新 后",
+    });
+
+    const duplicateRestoreResponse = await app.request(
+      `/api/v1/posts/${first.id}/restore`,
+      jsonRequest("POST"),
+      env,
+    );
+    expect(duplicateRestoreResponse.status).toBe(409);
+
+    const secondDeleteResponse = await app.request(
+      `/api/v1/posts/${first.id}`,
+      jsonRequest("DELETE"),
+      env,
+    );
+    expect(secondDeleteResponse.status).toBe(204);
+
     const stored = await env.DB.prepare("SELECT deleted_at FROM posts WHERE id = ?")
       .bind(first.id)
       .first<{ deleted_at: string | null }>();
     expect(stored?.deleted_at).not.toBeNull();
+  });
+
+  it("groups and navigates posts by Asia/Shanghai date and anchors feed pagination", async () => {
+    const rows = [
+      ["11111111-1111-4111-8111-111111111111", "较早日期", "2026-08-06T15:59:59.999Z"],
+      ["22222222-2222-4222-8222-222222222222", "当天较早", "2026-08-06T16:00:00.000Z"],
+      ["33333333-3333-4333-8333-333333333333", "当天较新", "2026-08-07T15:59:59.999Z"],
+      ["44444444-4444-4444-8444-444444444444", "较新日期", "2026-08-07T16:00:00.000Z"],
+    ] as const;
+    await env.DB.batch(rows.map(([id, content, createdAt]) => env.DB.prepare(
+      `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+       VALUES (?, ?, '[]', ?, ?)`,
+    ).bind(id, content, createdAt, createdAt)));
+
+    const app = createApp();
+    const detailResponse = await app.request("/api/v1/dates/2026-08-07", {}, env);
+    expect(detailResponse.status).toBe(200);
+    const detail = await detailResponse.json<{
+      date: string;
+      items: Array<{ id: string }>;
+      navigation: { newerDate: string | null; olderDate: string | null };
+    }>();
+    expect(detail.date).toBe("2026-08-07");
+    expect(detail.items.map((item) => item.id)).toEqual([rows[2][0], rows[1][0]]);
+    expect(detail.navigation).toEqual({ newerDate: "2026-08-08", olderDate: "2026-08-06" });
+
+    const anchoredResponse = await app.request(
+      "/api/v1/posts?limit=3&anchorDate=2026-08-07",
+      {},
+      env,
+    );
+    const anchored = await anchoredResponse.json<{
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    }>();
+    expect(anchored.items.map((item) => item.id)).toEqual([rows[2][0], rows[1][0], rows[0][0]]);
+    expect(anchored.items.some((item) => item.id === rows[3][0])).toBe(false);
+
+    const conflictResponse = await app.request(
+      `/api/v1/posts?cursor=${encodeURIComponent(anchored.nextCursor ?? "unused")}&anchorDate=2026-08-07`,
+      {},
+      env,
+    );
+    expect(conflictResponse.status).toBe(422);
+
+    expect((await app.request("/api/v1/dates/2026-02-30", {}, env)).status).toBe(422);
+    expect((await app.request("/api/v1/dates/2026-08-09", {}, env)).status).toBe(404);
+  });
+
+  it("protects post restoration with Clerk administrator authentication and CORS", async () => {
+    const id = "55555555-5555-4555-8555-555555555555";
+    const timestamp = "2026-08-07T00:00:00.000Z";
+    await env.DB.prepare(
+      `INSERT INTO posts (id, content, images_json, created_at, updated_at, deleted_at)
+       VALUES (?, '已删除', '[]', ?, ?, ?)`,
+    ).bind(id, timestamp, timestamp, timestamp).run();
+
+    const unauthenticated = await createApp().request(
+      `/api/v1/posts/${id}/restore`,
+      { method: "POST", headers: { Origin: env.ALLOWED_ORIGIN } },
+      env,
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const forbidden = await createApp({ tokenVerifier: nonAdminVerifier }).request(
+      `/api/v1/posts/${id}/restore`,
+      jsonRequest("POST"),
+      env,
+    );
+    expect(forbidden.status).toBe(403);
+
+    const preflight = await createApp().request(
+      `/api/v1/posts/${id}/restore`,
+      {
+        method: "OPTIONS",
+        headers: {
+          Origin: env.ALLOWED_ORIGIN,
+          "Access-Control-Request-Method": "POST",
+        },
+      },
+      env,
+    );
+    expect(preflight.status).toBe(204);
   });
 
   it("rejects invalid cursors and disallowed browser origins", async () => {

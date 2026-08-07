@@ -1,5 +1,7 @@
 import { z } from "@hono/zod-openapi";
 
+import { isValidShanghaiDate } from "./lib/date";
+
 export const PostIdSchema = z.uuid().openapi({
   description: "Stable post ID.",
   example: "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e",
@@ -26,6 +28,14 @@ export const PostListSchema = z.object({
 
 export type PostList = z.infer<typeof PostListSchema>;
 
+export const ShanghaiDateSchema = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isValidShanghaiDate, "Invalid Asia/Shanghai calendar date.")
+  .openapi({
+    description: "Calendar date in the fixed Asia/Shanghai time zone.",
+    example: "2026-08-07",
+  });
+
 export const PostDetailSchema = z.object({
   post: PostSchema,
   navigation: z.object({
@@ -33,6 +43,17 @@ export const PostDetailSchema = z.object({
     olderId: PostIdSchema.nullable(),
   }),
 }).openapi("PostDetail");
+
+export const DateDetailSchema = z.object({
+  date: ShanghaiDateSchema,
+  items: z.array(PostSchema),
+  navigation: z.object({
+    newerDate: ShanghaiDateSchema.nullable(),
+    olderDate: ShanghaiDateSchema.nullable(),
+  }),
+}).openapi("DateDetail");
+
+export type DateDetail = z.infer<typeof DateDetailSchema>;
 
 export const WritePostSchema = z.strictObject({
   content: z.string().min(1).openapi({

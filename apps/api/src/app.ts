@@ -8,9 +8,11 @@ import {
 } from "./auth";
 import {
   createPost,
+  getDateDetail,
   getPost,
   getPostNavigation,
   listPosts,
+  restorePost,
   softDeletePost,
   updatePost,
 } from "./db/posts";
@@ -19,12 +21,14 @@ import { ApiError, errorBody, errorResponse } from "./lib/errors";
 import { openApiConfig } from "./openapi";
 import {
   AuthStatusSchema,
+  DateDetailSchema,
   ErrorSchema,
   HealthSchema,
   PostDetailSchema,
   PostIdSchema,
   PostListSchema,
   PostSchema,
+  ShanghaiDateSchema,
   WritePostSchema,
 } from "./schemas";
 import type { AppEnv, TokenVerifier } from "./types";
@@ -81,12 +85,16 @@ const corsAndOriginGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
 const listPostsRoute = createRoute({
   method: "get",
   path: "/api/v1/posts",
+  operationId: "listPosts",
   tags: ["Posts"],
   summary: "List posts",
   request: {
     query: z.object({
       limit: z.coerce.number().int().min(1).max(100).default(20),
       cursor: z.string().min(1).optional(),
+      anchorDate: ShanghaiDateSchema.optional().openapi({
+        description: "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor.",
+      }),
     }),
   },
   responses: {
@@ -97,9 +105,25 @@ const listPostsRoute = createRoute({
   },
 });
 
+const getDateRoute = createRoute({
+  method: "get",
+  path: "/api/v1/dates/{date}",
+  operationId: "getDateDetail",
+  tags: ["Dates"],
+  summary: "Get all posts and adjacent dates for an Asia/Shanghai calendar date",
+  request: { params: z.object({ date: ShanghaiDateSchema }) },
+  responses: {
+    200: { description: "Date detail and navigation.", content: jsonContent(DateDetailSchema) },
+    404: errorResponseDefinition("The requested date has no posts."),
+    422: errorResponseDefinition("Invalid calendar date."),
+    500: errorResponseDefinition("Unexpected server error."),
+  },
+});
+
 const getPostRoute = createRoute({
   method: "get",
   path: "/api/v1/posts/{id}",
+  operationId: "getPostById",
   tags: ["Posts"],
   summary: "Get a post and its adjacent post IDs",
   request: { params: z.object({ id: PostIdSchema }) },
@@ -114,6 +138,7 @@ const getPostRoute = createRoute({
 const createPostRoute = createRoute({
   method: "post",
   path: "/api/v1/posts",
+  operationId: "createPost",
   tags: ["Posts"],
   summary: "Create a post",
   security: [{ ClerkBearer: [] }],
@@ -133,6 +158,7 @@ const createPostRoute = createRoute({
 const updatePostRoute = createRoute({
   method: "patch",
   path: "/api/v1/posts/{id}",
+  operationId: "updatePost",
   tags: ["Posts"],
   summary: "Update a post",
   security: [{ ClerkBearer: [] }],
@@ -154,6 +180,7 @@ const updatePostRoute = createRoute({
 const deletePostRoute = createRoute({
   method: "delete",
   path: "/api/v1/posts/{id}",
+  operationId: "deletePost",
   tags: ["Posts"],
   summary: "Soft-delete a post",
   security: [{ ClerkBearer: [] }],
@@ -169,9 +196,30 @@ const deletePostRoute = createRoute({
   },
 });
 
+const restorePostRoute = createRoute({
+  method: "post",
+  path: "/api/v1/posts/{id}/restore",
+  operationId: "restorePost",
+  tags: ["Posts"],
+  summary: "Restore a soft-deleted post",
+  security: [{ ClerkBearer: [] }],
+  request: { params: z.object({ id: PostIdSchema }) },
+  responses: {
+    200: { description: "Post restored.", content: jsonContent(PostSchema) },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    404: errorResponseDefinition("Post not found."),
+    409: errorResponseDefinition("Post is not deleted."),
+    422: errorResponseDefinition("Invalid post ID."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Authentication is not configured."),
+  },
+});
+
 const authStatusRoute = createRoute({
   method: "get",
   path: "/api/v1/auth/me",
+  operationId: "getAuthStatus",
   tags: ["Authentication"],
   summary: "Get authenticated administrator status",
   security: [{ ClerkBearer: [] }],
@@ -186,6 +234,7 @@ const authStatusRoute = createRoute({
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
+  operationId: "healthCheck",
   tags: ["System"],
   summary: "Check Worker and D1 health",
   responses: {
@@ -222,7 +271,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const authenticate = requireAuthentication(tokenVerifier);
   app.use("/api/v1/auth/me", authenticate);
   app.use("/api/v1/posts", requireAdministratorForMethods(tokenVerifier, ["POST"]));
-  app.use("/api/v1/posts/*", requireAdministratorForMethods(tokenVerifier, ["PATCH", "DELETE"]));
+  app.use("/api/v1/posts/*", requireAdministratorForMethods(tokenVerifier, ["PATCH", "DELETE", "POST"]));
 
   app.openapi(healthRoute, async (c) => {
     await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
@@ -230,15 +279,26 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(listPostsRoute, async (c) => {
-    const { limit, cursor } = c.req.valid("query");
+    const { limit, cursor, anchorDate } = c.req.valid("query");
+    if (cursor !== undefined && anchorDate !== undefined) {
+      throw new ApiError(
+        422,
+        "PAGINATION_CONFLICT",
+        "cursor and anchorDate cannot be used together.",
+      );
+    }
     try {
-      return c.json(await listPosts(c.env.DB, limit, cursor), 200);
+      return c.json(await listPosts(c.env.DB, limit, cursor, anchorDate), 200);
     } catch (error) {
       if (error instanceof Error && error.name === "InvalidCursorError") {
         throw new ApiError(400, "INVALID_CURSOR", error.message);
       }
       throw error;
     }
+  });
+
+  app.openapi(getDateRoute, async (c) => {
+    return c.json(await getDateDetail(c.env.DB, c.req.valid("param").date), 200);
   });
 
   app.openapi(getPostRoute, async (c) => {
@@ -268,6 +328,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.openapi(deletePostRoute, async (c) => {
     await softDeletePost(c.env.DB, c.req.valid("param").id);
     return c.body(null, 204);
+  });
+
+  app.openapi(restorePostRoute, async (c) => {
+    return c.json(await restorePost(c.env.DB, c.req.valid("param").id), 200);
   });
 
   app.openapi(authStatusRoute, (c) => {
