@@ -1,0 +1,40 @@
+{
+  "name": "@moments/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "types:worker": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "openapi:generate": "tsx scripts/generate-openapi.ts",
+    "openapi:check": "tsx scripts/check-openapi.ts",
+    "check": "pnpm types:worker && pnpm typecheck && pnpm lint && pnpm test && pnpm openapi:check && pnpm deploy:dry-run",
+    "db:migrate:local": "wrangler d1 migrations apply moments --local",
+    "db:migrate:remote": "wrangler d1 migrations apply moments --remote",
+    "db:list:local": "wrangler d1 execute moments --local --command \"SELECT id, content, created_at, updated_at, deleted_at FROM posts ORDER BY created_at DESC\"",
+    "db:list:remote": "wrangler d1 execute moments --remote --command \"SELECT id, content, created_at, updated_at, deleted_at FROM posts ORDER BY created_at DESC\""
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.16.0",
+    "@hono/zod-openapi": "^1.5.1",
+    "hono": "^4.13.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.20.2",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.2",
+    "eslint": "^10.8.0",
+    "tsx": "^4.23.10",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.119.0"
+  }
+}

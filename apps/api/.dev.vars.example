@@ -1,0 +1,5 @@
+# Copy to .dev.vars. Never commit real values.
+# Clerk Dashboard -> API keys -> Show JWT public key -> PEM Public Key.
+CLERK_JWT_KEY="-----BEGIN PUBLIC KEY-----\nreplace-me\n-----END PUBLIC KEY-----"
+ADMIN_CLERK_USER_ID="user_replace_me"
+
