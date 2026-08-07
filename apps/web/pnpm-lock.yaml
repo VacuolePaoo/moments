@@ -11,6 +11,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.7.0
         version: 1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@clerk/localizations':
+        specifier: ^4.14.1
+        version: 4.14.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@clerk/nextjs':
         specifier: ^7.7.0
         version: 7.7.0(next@16.3.0(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -235,6 +238,10 @@ packages:
 
   '@clerk/backend@3.16.0':
     resolution: {integrity: sha512-x+FO1BGGKeT/0q8XFtmkEpIszvxRTdADyPnWN/NlP0Lh/lQqG74ynWNE617AuUIF7bA4ZBYDDI3Xe280PCBkuA==}
+    engines: {node: '>=20.9.0'}
+
+  '@clerk/localizations@4.14.1':
+    resolution: {integrity: sha512-ZkljDbpvD+osjn8QGvvD1LZ/lRWImOZglzgPFA/XFPpM9v+y0LLbbJwvFyxx1PE5vG3cJb6jC0fxu4BsH7cUOg==}
     engines: {node: '>=20.9.0'}
 
   '@clerk/nextjs@7.7.0':
@@ -3216,6 +3223,12 @@ snapshots:
       - react
       - react-dom
 
+  '@clerk/localizations@4.14.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@clerk/shared': 4.27.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+    transitivePeerDependencies:
+      - react
+      - react-dom
   '@clerk/nextjs@7.7.0(next@16.3.0(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@clerk/backend': 3.16.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
