@@ -16,8 +16,8 @@ const systemThemeScript = `(() => {
 
 export const metadata: Metadata = {
   title: {
-    default: "Moments",
-    template: "%s · Moments",
+    default: "Dinosaur Moments",
+    template: "%s · Dinosaur",
   },
 };
 
