@@ -13,11 +13,16 @@ export function toShanghaiDate(isoTimestamp: string): string {
 export function isValidShanghaiDate(value: string): boolean {
   if (!ISO_DATE_PATTERN.test(value)) return false;
   const start = Date.parse(`${value}T00:00:00+08:00`);
-  return Number.isFinite(start)
-    && toShanghaiDate(new Date(start).toISOString()) === value;
+  return (
+    Number.isFinite(start) &&
+    toShanghaiDate(new Date(start).toISOString()) === value
+  );
 }
 
-export function getShanghaiDayBounds(value: string): { startAt: string; endAt: string } {
+export function getShanghaiDayBounds(value: string): {
+  startAt: string;
+  endAt: string;
+} {
   if (!isValidShanghaiDate(value)) {
     throw new Error("Invalid Asia/Shanghai calendar date.");
   }

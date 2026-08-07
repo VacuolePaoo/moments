@@ -48,4 +48,3 @@ export function errorResponse(
 ) {
   return c.json(errorBody(c.get("requestId"), code, message, details), status);
 }
-

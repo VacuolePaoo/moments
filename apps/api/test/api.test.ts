@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import type { TokenVerifier } from "../src/types";
 
-const adminVerifier: TokenVerifier = () => Promise.resolve({ userId: env.ADMIN_CLERK_USER_ID });
-const nonAdminVerifier: TokenVerifier = () => Promise.resolve({ userId: "user_not_admin" });
+const adminVerifier: TokenVerifier = () =>
+  Promise.resolve({ userId: env.ADMIN_CLERK_USER_ID });
+const nonAdminVerifier: TokenVerifier = () =>
+  Promise.resolve({ userId: "user_not_admin" });
 
 async function clearPosts() {
   await env.DB.prepare("DELETE FROM posts").run();
@@ -29,13 +31,19 @@ describe("Moments API", () => {
   it("reports Worker and D1 health", async () => {
     const response = await createApp().request("/health", {}, env);
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ status: "ok", database: "ok" });
+    await expect(response.json()).resolves.toMatchObject({
+      status: "ok",
+      database: "ok",
+    });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("publishes an OpenAPI 3.1 contract", async () => {
     const response = await createApp().request("/openapi.json", {}, env);
-    const document = await response.json<{ openapi: string; paths: Record<string, unknown> }>();
+    const document = await response.json<{
+      openapi: string;
+      paths: Record<string, unknown>;
+    }>();
     expect(document.openapi).toBe("3.1.0");
     expect(document.paths).toHaveProperty("/api/v1/posts");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}");
@@ -46,25 +54,30 @@ describe("Moments API", () => {
   it("requires Clerk authentication for writes", async () => {
     const response = await createApp().request(
       "/api/v1/posts",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "x" }) },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "x" }),
+      },
       env,
     );
     expect(response.status).toBe(401);
   });
 
   it("rejects an authenticated non-administrator", async () => {
-    const response = await createApp({ tokenVerifier: nonAdminVerifier }).request(
-      "/api/v1/posts",
-      jsonRequest("POST", { content: "x" }),
-      env,
-    );
+    const response = await createApp({
+      tokenVerifier: nonAdminVerifier,
+    }).request("/api/v1/posts", jsonRequest("POST", { content: "x" }), env);
     expect(response.status).toBe(403);
   });
 
   it("rejects image fields until the image API is implemented", async () => {
     const response = await createApp({ tokenVerifier: adminVerifier }).request(
       "/api/v1/posts",
-      jsonRequest("POST", { content: "x", images: ["https://file.vacu.top/file/test.png"] }),
+      jsonRequest("POST", {
+        content: "x",
+        images: ["https://file.vacu.top/file/test.png"],
+      }),
       env,
     );
     expect(response.status).toBe(422);
@@ -74,11 +87,17 @@ describe("Moments API", () => {
     const app = createApp({ tokenVerifier: adminVerifier });
     const firstResponse = await app.request(
       "/api/v1/posts",
-      jsonRequest("POST", { content: "  第一条   🙂\n\nhttps://example.com  " }),
+      jsonRequest("POST", {
+        content: "  第一条   🙂\n\nhttps://example.com  ",
+      }),
       env,
     );
     expect(firstResponse.status).toBe(201);
-    const first = await firstResponse.json<{ id: string; content: string; images: string[] }>();
+    const first = await firstResponse.json<{
+      id: string;
+      content: string;
+      images: string[];
+    }>();
     expect(first.content).toBe("第一条 🙂\nhttps://example.com");
     expect(first.images).toEqual([]);
 
@@ -103,10 +122,16 @@ describe("Moments API", () => {
       {},
       env,
     );
-    const pageTwo = await pageTwoResponse.json<{ items: Array<{ id: string }> }>();
+    const pageTwo = await pageTwoResponse.json<{
+      items: Array<{ id: string }>;
+    }>();
     expect(pageTwo.items[0]?.id).toBe(first.id);
 
-    const detailResponse = await app.request(`/api/v1/posts/${first.id}`, {}, env);
+    const detailResponse = await app.request(
+      `/api/v1/posts/${first.id}`,
+      {},
+      env,
+    );
     const detail = await detailResponse.json<{
       navigation: { newerId: string | null; olderId: string | null };
     }>();
@@ -118,7 +143,10 @@ describe("Moments API", () => {
       jsonRequest("PATCH", { content: "更新   后" }),
       env,
     );
-    const updated = await updateResponse.json<{ content: string; edited: boolean }>();
+    const updated = await updateResponse.json<{
+      content: string;
+      edited: boolean;
+    }>();
     expect(updated).toMatchObject({ content: "更新 后", edited: true });
 
     const deleteResponse = await app.request(
@@ -128,7 +156,11 @@ describe("Moments API", () => {
     );
     expect(deleteResponse.status).toBe(204);
 
-    const missingResponse = await app.request(`/api/v1/posts/${first.id}`, {}, env);
+    const missingResponse = await app.request(
+      `/api/v1/posts/${first.id}`,
+      {},
+      env,
+    );
     expect(missingResponse.status).toBe(404);
 
     const restoreResponse = await app.request(
@@ -156,7 +188,9 @@ describe("Moments API", () => {
     );
     expect(secondDeleteResponse.status).toBe(204);
 
-    const stored = await env.DB.prepare("SELECT deleted_at FROM posts WHERE id = ?")
+    const stored = await env.DB.prepare(
+      "SELECT deleted_at FROM posts WHERE id = ?",
+    )
       .bind(first.id)
       .first<{ deleted_at: string | null }>();
     expect(stored?.deleted_at).not.toBeNull();
@@ -164,18 +198,42 @@ describe("Moments API", () => {
 
   it("groups and navigates posts by Asia/Shanghai date and anchors feed pagination", async () => {
     const rows = [
-      ["11111111-1111-4111-8111-111111111111", "较早日期", "2026-08-06T15:59:59.999Z"],
-      ["22222222-2222-4222-8222-222222222222", "当天较早", "2026-08-06T16:00:00.000Z"],
-      ["33333333-3333-4333-8333-333333333333", "当天较新", "2026-08-07T15:59:59.999Z"],
-      ["44444444-4444-4444-8444-444444444444", "较新日期", "2026-08-07T16:00:00.000Z"],
+      [
+        "11111111-1111-4111-8111-111111111111",
+        "较早日期",
+        "2026-08-06T15:59:59.999Z",
+      ],
+      [
+        "22222222-2222-4222-8222-222222222222",
+        "当天较早",
+        "2026-08-06T16:00:00.000Z",
+      ],
+      [
+        "33333333-3333-4333-8333-333333333333",
+        "当天较新",
+        "2026-08-07T15:59:59.999Z",
+      ],
+      [
+        "44444444-4444-4444-8444-444444444444",
+        "较新日期",
+        "2026-08-07T16:00:00.000Z",
+      ],
     ] as const;
-    await env.DB.batch(rows.map(([id, content, createdAt]) => env.DB.prepare(
-      `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+    await env.DB.batch(
+      rows.map(([id, content, createdAt]) =>
+        env.DB.prepare(
+          `INSERT INTO posts (id, content, images_json, created_at, updated_at)
        VALUES (?, ?, '[]', ?, ?)`,
-    ).bind(id, content, createdAt, createdAt)));
+        ).bind(id, content, createdAt, createdAt),
+      ),
+    );
 
     const app = createApp();
-    const detailResponse = await app.request("/api/v1/dates/2026-08-07", {}, env);
+    const detailResponse = await app.request(
+      "/api/v1/dates/2026-08-07",
+      {},
+      env,
+    );
     expect(detailResponse.status).toBe(200);
     const detail = await detailResponse.json<{
       date: string;
@@ -183,8 +241,14 @@ describe("Moments API", () => {
       navigation: { newerDate: string | null; olderDate: string | null };
     }>();
     expect(detail.date).toBe("2026-08-07");
-    expect(detail.items.map((item) => item.id)).toEqual([rows[2][0], rows[1][0]]);
-    expect(detail.navigation).toEqual({ newerDate: "2026-08-08", olderDate: "2026-08-06" });
+    expect(detail.items.map((item) => item.id)).toEqual([
+      rows[2][0],
+      rows[1][0],
+    ]);
+    expect(detail.navigation).toEqual({
+      newerDate: "2026-08-08",
+      olderDate: "2026-08-06",
+    });
 
     const anchoredResponse = await app.request(
       "/api/v1/posts?limit=3&anchorDate=2026-08-07",
@@ -195,7 +259,11 @@ describe("Moments API", () => {
       items: Array<{ id: string }>;
       nextCursor: string | null;
     }>();
-    expect(anchored.items.map((item) => item.id)).toEqual([rows[2][0], rows[1][0], rows[0][0]]);
+    expect(anchored.items.map((item) => item.id)).toEqual([
+      rows[2][0],
+      rows[1][0],
+      rows[0][0],
+    ]);
     expect(anchored.items.some((item) => item.id === rows[3][0])).toBe(false);
 
     const conflictResponse = await app.request(
@@ -205,8 +273,12 @@ describe("Moments API", () => {
     );
     expect(conflictResponse.status).toBe(422);
 
-    expect((await app.request("/api/v1/dates/2026-02-30", {}, env)).status).toBe(422);
-    expect((await app.request("/api/v1/dates/2026-08-09", {}, env)).status).toBe(404);
+    expect(
+      (await app.request("/api/v1/dates/2026-02-30", {}, env)).status,
+    ).toBe(422);
+    expect(
+      (await app.request("/api/v1/dates/2026-08-09", {}, env)).status,
+    ).toBe(404);
   });
 
   it("protects post restoration with Clerk administrator authentication and CORS", async () => {
@@ -215,7 +287,9 @@ describe("Moments API", () => {
     await env.DB.prepare(
       `INSERT INTO posts (id, content, images_json, created_at, updated_at, deleted_at)
        VALUES (?, '已删除', '[]', ?, ?, ?)`,
-    ).bind(id, timestamp, timestamp, timestamp).run();
+    )
+      .bind(id, timestamp, timestamp, timestamp)
+      .run();
 
     const unauthenticated = await createApp().request(
       `/api/v1/posts/${id}/restore`,
@@ -224,11 +298,9 @@ describe("Moments API", () => {
     );
     expect(unauthenticated.status).toBe(401);
 
-    const forbidden = await createApp({ tokenVerifier: nonAdminVerifier }).request(
-      `/api/v1/posts/${id}/restore`,
-      jsonRequest("POST"),
-      env,
-    );
+    const forbidden = await createApp({
+      tokenVerifier: nonAdminVerifier,
+    }).request(`/api/v1/posts/${id}/restore`, jsonRequest("POST"), env);
     expect(forbidden.status).toBe(403);
 
     const preflight = await createApp().request(
@@ -246,10 +318,16 @@ describe("Moments API", () => {
   });
 
   it("rejects invalid cursors and disallowed browser origins", async () => {
-    const invalidCursor = await createApp().request("/api/v1/posts?cursor=bad", {}, env);
+    const invalidCursor = await createApp().request(
+      "/api/v1/posts?cursor=bad",
+      {},
+      env,
+    );
     expect(invalidCursor.status).toBe(400);
 
-    const wrongOrigin = await createApp({ tokenVerifier: adminVerifier }).request(
+    const wrongOrigin = await createApp({
+      tokenVerifier: adminVerifier,
+    }).request(
       "/api/v1/posts",
       {
         ...jsonRequest("POST", { content: "x" }),

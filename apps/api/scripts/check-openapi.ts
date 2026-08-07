@@ -14,4 +14,3 @@ if (actual !== expected) {
   throw new Error("openapi/openapi.json is stale. Run pnpm openapi:generate.");
 }
 console.log("OpenAPI artifact is up to date.");
-

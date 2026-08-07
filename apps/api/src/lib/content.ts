@@ -5,4 +5,3 @@ export function normalizeContent(value: string): string {
     .replace(/\n+/g, "\n")
     .trim();
 }
-

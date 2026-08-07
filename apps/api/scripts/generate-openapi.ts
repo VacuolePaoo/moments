@@ -12,4 +12,3 @@ const document = createApp().getOpenAPI31Document(openApiConfig);
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
 console.log(`Generated ${outputPath}`);
-

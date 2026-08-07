@@ -7,13 +7,23 @@ export const openApiConfig: OpenApi31Config = {
   info: {
     title: "Moments API",
     version: "1.1.0",
-    description: "Public read and Clerk-protected write API for a personal Moments site.",
+    description:
+      "Public read and Clerk-protected write API for a personal Moments site.",
   },
   servers: [{ url: "/" }],
   tags: [
     { name: "System", description: "Service metadata and health." },
-    { name: "Posts", description: "Public post reads and administrator mutations." },
-    { name: "Dates", description: "Public Asia/Shanghai date-grouped reads and navigation." },
-    { name: "Authentication", description: "Clerk session and administrator status." },
+    {
+      name: "Posts",
+      description: "Public post reads and administrator mutations.",
+    },
+    {
+      name: "Dates",
+      description: "Public Asia/Shanghai date-grouped reads and navigation.",
+    },
+    {
+      name: "Authentication",
+      description: "Clerk session and administrator status.",
+    },
   ],
 };

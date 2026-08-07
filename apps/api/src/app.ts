@@ -53,24 +53,45 @@ const securityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
 
 const corsAndOriginGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
   const origin = c.req.header("Origin");
-  const requestedMethod = c.req.header("Access-Control-Request-Method")?.toUpperCase();
+  const requestedMethod = c.req
+    .header("Access-Control-Request-Method")
+    ?.toUpperCase();
   const path = c.req.path;
   const isPublicRead = c.req.method === "GET" && path !== "/api/v1/auth/me";
 
   if (c.req.method === "OPTIONS") {
-    const publicPreflight = requestedMethod === "GET" && path !== "/api/v1/auth/me";
+    const publicPreflight =
+      requestedMethod === "GET" && path !== "/api/v1/auth/me";
     if (!publicPreflight && origin !== c.env.ALLOWED_ORIGIN) {
-      throw new ApiError(403, "ORIGIN_NOT_ALLOWED", "The request origin is not allowed.");
+      throw new ApiError(
+        403,
+        "ORIGIN_NOT_ALLOWED",
+        "The request origin is not allowed.",
+      );
     }
-    c.header("Access-Control-Allow-Origin", publicPreflight ? "*" : c.env.ALLOWED_ORIGIN);
-    c.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    c.header(
+      "Access-Control-Allow-Origin",
+      publicPreflight ? "*" : c.env.ALLOWED_ORIGIN,
+    );
+    c.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PATCH, DELETE, OPTIONS",
+    );
     c.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
     c.header("Access-Control-Max-Age", "86400");
     return c.body(null, 204);
   }
 
-  if (!isPublicRead && origin !== undefined && origin !== c.env.ALLOWED_ORIGIN) {
-    throw new ApiError(403, "ORIGIN_NOT_ALLOWED", "The request origin is not allowed.");
+  if (
+    !isPublicRead &&
+    origin !== undefined &&
+    origin !== c.env.ALLOWED_ORIGIN
+  ) {
+    throw new ApiError(
+      403,
+      "ORIGIN_NOT_ALLOWED",
+      "The request origin is not allowed.",
+    );
   }
 
   await next();
@@ -93,12 +114,16 @@ const listPostsRoute = createRoute({
       limit: z.coerce.number().int().min(1).max(100).default(20),
       cursor: z.string().min(1).optional(),
       anchorDate: ShanghaiDateSchema.optional().openapi({
-        description: "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor.",
+        description:
+          "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor.",
       }),
     }),
   },
   responses: {
-    200: { description: "A newest-first cursor page.", content: jsonContent(PostListSchema) },
+    200: {
+      description: "A newest-first cursor page.",
+      content: jsonContent(PostListSchema),
+    },
     400: errorResponseDefinition("Invalid pagination cursor."),
     422: errorResponseDefinition("Invalid query parameters."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -110,10 +135,14 @@ const getDateRoute = createRoute({
   path: "/api/v1/dates/{date}",
   operationId: "getDateDetail",
   tags: ["Dates"],
-  summary: "Get all posts and adjacent dates for an Asia/Shanghai calendar date",
+  summary:
+    "Get all posts and adjacent dates for an Asia/Shanghai calendar date",
   request: { params: z.object({ date: ShanghaiDateSchema }) },
   responses: {
-    200: { description: "Date detail and navigation.", content: jsonContent(DateDetailSchema) },
+    200: {
+      description: "Date detail and navigation.",
+      content: jsonContent(DateDetailSchema),
+    },
     404: errorResponseDefinition("The requested date has no posts."),
     422: errorResponseDefinition("Invalid calendar date."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -128,7 +157,10 @@ const getPostRoute = createRoute({
   summary: "Get a post and its adjacent post IDs",
   request: { params: z.object({ id: PostIdSchema }) },
   responses: {
-    200: { description: "Post detail.", content: jsonContent(PostDetailSchema) },
+    200: {
+      description: "Post detail.",
+      content: jsonContent(PostDetailSchema),
+    },
     404: errorResponseDefinition("Post not found."),
     422: errorResponseDefinition("Invalid post ID."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -224,7 +256,10 @@ const authStatusRoute = createRoute({
   summary: "Get authenticated administrator status",
   security: [{ ClerkBearer: [] }],
   responses: {
-    200: { description: "Authentication status.", content: jsonContent(AuthStatusSchema) },
+    200: {
+      description: "Authentication status.",
+      content: jsonContent(AuthStatusSchema),
+    },
     401: errorResponseDefinition("Authentication required."),
     500: errorResponseDefinition("Unexpected server error."),
     503: errorResponseDefinition("Authentication is not configured."),
@@ -238,7 +273,10 @@ const healthRoute = createRoute({
   tags: ["System"],
   summary: "Check Worker and D1 health",
   responses: {
-    200: { description: "The Worker can query D1.", content: jsonContent(HealthSchema) },
+    200: {
+      description: "The Worker can query D1.",
+      content: jsonContent(HealthSchema),
+    },
     500: errorResponseDefinition("D1 is unavailable."),
   },
 });
@@ -270,12 +308,25 @@ export function createApp(options: CreateAppOptions = {}) {
 
   const authenticate = requireAuthentication(tokenVerifier);
   app.use("/api/v1/auth/me", authenticate);
-  app.use("/api/v1/posts", requireAdministratorForMethods(tokenVerifier, ["POST"]));
-  app.use("/api/v1/posts/*", requireAdministratorForMethods(tokenVerifier, ["PATCH", "DELETE", "POST"]));
+  app.use(
+    "/api/v1/posts",
+    requireAdministratorForMethods(tokenVerifier, ["POST"]),
+  );
+  app.use(
+    "/api/v1/posts/*",
+    requireAdministratorForMethods(tokenVerifier, ["PATCH", "DELETE", "POST"]),
+  );
 
   app.openapi(healthRoute, async (c) => {
     await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
-    return c.json({ status: "ok" as const, database: "ok" as const, timestamp: new Date().toISOString() }, 200);
+    return c.json(
+      {
+        status: "ok" as const,
+        database: "ok" as const,
+        timestamp: new Date().toISOString(),
+      },
+      200,
+    );
   });
 
   app.openapi(listPostsRoute, async (c) => {
@@ -298,7 +349,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(getDateRoute, async (c) => {
-    return c.json(await getDateDetail(c.env.DB, c.req.valid("param").date), 200);
+    return c.json(
+      await getDateDetail(c.env.DB, c.req.valid("param").date),
+      200,
+    );
   });
 
   app.openapi(getPostRoute, async (c) => {
@@ -335,13 +389,23 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(authStatusRoute, (c) => {
-    if (typeof c.env.ADMIN_CLERK_USER_ID !== "string" || c.env.ADMIN_CLERK_USER_ID.length === 0) {
-      throw new ApiError(503, "AUTH_NOT_CONFIGURED", "Administrator access is not configured.");
+    if (
+      typeof c.env.ADMIN_CLERK_USER_ID !== "string" ||
+      c.env.ADMIN_CLERK_USER_ID.length === 0
+    ) {
+      throw new ApiError(
+        503,
+        "AUTH_NOT_CONFIGURED",
+        "Administrator access is not configured.",
+      );
     }
-    return c.json({
-      authenticated: true as const,
-      isAdmin: c.get("authenticatedUserId") === c.env.ADMIN_CLERK_USER_ID,
-    }, 200);
+    return c.json(
+      {
+        authenticated: true as const,
+        isAdmin: c.get("authenticatedUserId") === c.env.ADMIN_CLERK_USER_ID,
+      },
+      200,
+    );
   });
 
   app.openAPIRegistry.registerComponent("securitySchemes", "ClerkBearer", {
@@ -353,20 +417,42 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.doc31("/openapi.json", openApiConfig);
 
-  app.notFound((c) => errorResponse(c, 404, "NOT_FOUND", "The requested endpoint does not exist."));
+  app.notFound((c) =>
+    errorResponse(
+      c,
+      404,
+      "NOT_FOUND",
+      "The requested endpoint does not exist.",
+    ),
+  );
 
   app.onError((error, c) => {
     if (error instanceof ApiError) {
-      return errorResponse(c, error.status, error.code, error.message, error.details);
+      return errorResponse(
+        c,
+        error.status,
+        error.code,
+        error.message,
+        error.details,
+      );
     }
 
-    console.error(JSON.stringify({
-      message: "Unhandled request error",
-      error: error instanceof Error ? error.message : String(error),
-      path: c.req.path,
-      requestId: c.get("requestId"),
-    }));
-    return c.json(errorBody(c.get("requestId"), "INTERNAL_ERROR", "An unexpected error occurred."), 500);
+    console.error(
+      JSON.stringify({
+        message: "Unhandled request error",
+        error: error instanceof Error ? error.message : String(error),
+        path: c.req.path,
+        requestId: c.get("requestId"),
+      }),
+    );
+    return c.json(
+      errorBody(
+        c.get("requestId"),
+        "INTERNAL_ERROR",
+        "An unexpected error occurred.",
+      ),
+      500,
+    );
   });
 
   return app;
