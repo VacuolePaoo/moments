@@ -1,7 +1,13 @@
 import { decodeCursor, encodeCursor } from "../lib/cursor";
 import { getShanghaiDayBounds, toShanghaiDate } from "../lib/date";
 import { ApiError } from "../lib/errors";
-import type { DateDetail, Post, PostList } from "../schemas";
+import type {
+  DateDetail,
+  DeletedPost,
+  DeletedPostList,
+  Post,
+  PostList,
+} from "../schemas";
 
 interface PostRow {
   id: string;
@@ -9,6 +15,10 @@ interface PostRow {
   images_json: string;
   created_at: string;
   updated_at: string;
+}
+
+interface DeletedPostRow extends PostRow {
+  deleted_at: string;
 }
 
 interface IdRow {
@@ -39,6 +49,10 @@ function toPost(row: PostRow): Post {
     updatedAt: row.updated_at,
     edited: row.updated_at !== row.created_at,
   };
+}
+
+function toDeletedPost(row: DeletedPostRow): DeletedPost {
+  return { ...toPost(row), deletedAt: row.deleted_at };
 }
 
 const postColumns = "id, content, images_json, created_at, updated_at";
@@ -95,6 +109,51 @@ export async function listPosts(
     nextCursor:
       hasMore && last !== undefined
         ? encodeCursor({ createdAt: last.created_at, id: last.id })
+        : null,
+  };
+}
+
+export async function listDeletedPosts(
+  db: D1Database,
+  limit: number,
+  cursor?: string,
+): Promise<DeletedPostList> {
+  const pageSize = limit + 1;
+  const statement =
+    cursor === undefined
+      ? db
+          .prepare(
+            `SELECT ${postColumns}, deleted_at
+             FROM posts
+             WHERE deleted_at IS NOT NULL
+             ORDER BY deleted_at DESC, id DESC
+             LIMIT ?`,
+          )
+          .bind(pageSize)
+      : (() => {
+          const decoded = decodeCursor(cursor);
+          return db
+            .prepare(
+              `SELECT ${postColumns}, deleted_at
+               FROM posts
+               WHERE deleted_at IS NOT NULL
+                 AND (deleted_at < ? OR (deleted_at = ? AND id < ?))
+               ORDER BY deleted_at DESC, id DESC
+               LIMIT ?`,
+            )
+            .bind(decoded.createdAt, decoded.createdAt, decoded.id, pageSize);
+        })();
+
+  const result = await statement.all<DeletedPostRow>();
+  const hasMore = result.results.length > limit;
+  const visibleRows = hasMore ? result.results.slice(0, limit) : result.results;
+  const last = visibleRows.at(-1);
+
+  return {
+    items: visibleRows.map(toDeletedPost),
+    nextCursor:
+      hasMore && last !== undefined
+        ? encodeCursor({ createdAt: last.deleted_at, id: last.id })
         : null,
   };
 }
@@ -231,6 +290,7 @@ export async function getPostNavigation(
 export async function createPost(
   db: D1Database,
   content: string,
+  images: string[],
 ): Promise<Post> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -238,15 +298,15 @@ export async function createPost(
   await db
     .prepare(
       `INSERT INTO posts (id, content, images_json, created_at, updated_at)
-     VALUES (?, ?, '[]', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?)`,
     )
-    .bind(id, content, now, now)
+    .bind(id, content, JSON.stringify(images), now, now)
     .run();
 
   return {
     id,
     content,
-    images: [],
+    images,
     createdAt: now,
     updatedAt: now,
     edited: false,
@@ -257,15 +317,16 @@ export async function updatePost(
   db: D1Database,
   id: string,
   content: string,
+  images: string[],
 ): Promise<Post> {
   const updatedAt = new Date().toISOString();
   const result = await db
     .prepare(
       `UPDATE posts
-     SET content = ?, updated_at = ?
+     SET content = ?, images_json = ?, updated_at = ?
      WHERE id = ? AND deleted_at IS NULL`,
     )
-    .bind(content, updatedAt, id)
+    .bind(content, JSON.stringify(images), updatedAt, id)
     .run();
 
   if (result.meta.changes === 0) {
@@ -313,4 +374,25 @@ export async function restorePost(db: D1Database, id: string): Promise<Post> {
     throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
   }
   return getPost(db, id);
+}
+
+export async function permanentlyDeletePost(
+  db: D1Database,
+  id: string,
+): Promise<void> {
+  const result = await db
+    .prepare("DELETE FROM posts WHERE id = ? AND deleted_at IS NOT NULL")
+    .bind(id)
+    .run();
+
+  if (result.meta.changes > 0) return;
+
+  const existing = await db
+    .prepare("SELECT deleted_at FROM posts WHERE id = ?")
+    .bind(id)
+    .first<{ deleted_at: string | null }>();
+  if (existing === null) {
+    throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
+  }
+  throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
 }

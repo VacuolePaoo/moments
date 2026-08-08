@@ -11,7 +11,9 @@ import {
   getDateDetail,
   getPost,
   getPostNavigation,
+  listDeletedPosts,
   listPosts,
+  permanentlyDeletePost,
   restorePost,
   softDeletePost,
   updatePost,
@@ -22,6 +24,7 @@ import { openApiConfig } from "./openapi";
 import {
   AuthStatusSchema,
   DateDetailSchema,
+  DeletedPostListSchema,
   ErrorSchema,
   HealthSchema,
   PostDetailSchema,
@@ -57,11 +60,12 @@ const corsAndOriginGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
     .header("Access-Control-Request-Method")
     ?.toUpperCase();
   const path = c.req.path;
-  const isPublicRead = c.req.method === "GET" && path !== "/api/v1/auth/me";
+  const isPrivateRead =
+    path === "/api/v1/auth/me" || path.startsWith("/api/v1/trash");
+  const isPublicRead = c.req.method === "GET" && !isPrivateRead;
 
   if (c.req.method === "OPTIONS") {
-    const publicPreflight =
-      requestedMethod === "GET" && path !== "/api/v1/auth/me";
+    const publicPreflight = requestedMethod === "GET" && !isPrivateRead;
     if (!publicPreflight && origin !== c.env.ALLOWED_ORIGIN) {
       throw new ApiError(
         403,
@@ -218,7 +222,7 @@ const deletePostRoute = createRoute({
   security: [{ ClerkBearer: [] }],
   request: { params: z.object({ id: PostIdSchema }) },
   responses: {
-    204: { description: "Post moved to the future recycle bin." },
+    204: { description: "Post moved to the recycle bin." },
     401: errorResponseDefinition("Authentication required."),
     403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
@@ -242,6 +246,53 @@ const restorePostRoute = createRoute({
     403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
     409: errorResponseDefinition("Post is not deleted."),
+    422: errorResponseDefinition("Invalid post ID."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Authentication is not configured."),
+  },
+});
+
+const listTrashRoute = createRoute({
+  method: "get",
+  path: "/api/v1/trash",
+  operationId: "listDeletedPosts",
+  tags: ["Trash"],
+  summary: "List soft-deleted posts",
+  security: [{ ClerkBearer: [] }],
+  request: {
+    query: z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+      cursor: z.string().min(1).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "A newest-deleted-first cursor page.",
+      content: jsonContent(DeletedPostListSchema),
+    },
+    400: errorResponseDefinition("Invalid pagination cursor."),
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    422: errorResponseDefinition("Invalid query parameters."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Authentication is not configured."),
+  },
+});
+
+const permanentlyDeletePostRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/trash/{id}",
+  operationId: "permanentlyDeletePost",
+  tags: ["Trash"],
+  summary: "Permanently delete a soft-deleted post",
+  security: [{ ClerkBearer: [] }],
+  request: { params: z.object({ id: PostIdSchema }) },
+  responses: {
+    204: { description: "Post permanently deleted." },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    404: errorResponseDefinition("Post not found."),
+    409: errorResponseDefinition("Post is not in the trash."),
     422: errorResponseDefinition("Invalid post ID."),
     500: errorResponseDefinition("Unexpected server error."),
     503: errorResponseDefinition("Authentication is not configured."),
@@ -316,6 +367,14 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/v1/posts/*",
     requireAdministratorForMethods(tokenVerifier, ["PATCH", "DELETE", "POST"]),
   );
+  app.use(
+    "/api/v1/trash",
+    requireAdministratorForMethods(tokenVerifier, ["GET"]),
+  );
+  app.use(
+    "/api/v1/trash/*",
+    requireAdministratorForMethods(tokenVerifier, ["DELETE"]),
+  );
 
   app.openapi(healthRoute, async (c) => {
     await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
@@ -363,20 +422,30 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(createPostRoute, async (c) => {
-    const content = normalizeContent(c.req.valid("json").content);
-    if (content.length === 0) {
-      throw new ApiError(422, "EMPTY_CONTENT", "Post content cannot be empty.");
+    const input = c.req.valid("json");
+    const content = normalizeContent(input.content);
+    if (content.length === 0 && input.images.length === 0) {
+      throw new ApiError(
+        422,
+        "EMPTY_POST",
+        "Post text or at least one image is required.",
+      );
     }
-    return c.json(await createPost(c.env.DB, content), 201);
+    return c.json(await createPost(c.env.DB, content, input.images), 201);
   });
 
   app.openapi(updatePostRoute, async (c) => {
     const { id } = c.req.valid("param");
-    const content = normalizeContent(c.req.valid("json").content);
-    if (content.length === 0) {
-      throw new ApiError(422, "EMPTY_CONTENT", "Post content cannot be empty.");
+    const input = c.req.valid("json");
+    const content = normalizeContent(input.content);
+    if (content.length === 0 && input.images.length === 0) {
+      throw new ApiError(
+        422,
+        "EMPTY_POST",
+        "Post text or at least one image is required.",
+      );
     }
-    return c.json(await updatePost(c.env.DB, id, content), 200);
+    return c.json(await updatePost(c.env.DB, id, content, input.images), 200);
   });
 
   app.openapi(deletePostRoute, async (c) => {
@@ -386,6 +455,23 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.openapi(restorePostRoute, async (c) => {
     return c.json(await restorePost(c.env.DB, c.req.valid("param").id), 200);
+  });
+
+  app.openapi(listTrashRoute, async (c) => {
+    const { limit, cursor } = c.req.valid("query");
+    try {
+      return c.json(await listDeletedPosts(c.env.DB, limit, cursor), 200);
+    } catch (error) {
+      if (error instanceof Error && error.name === "InvalidCursorError") {
+        throw new ApiError(400, "INVALID_CURSOR", error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.openapi(permanentlyDeletePostRoute, async (c) => {
+    await permanentlyDeletePost(c.env.DB, c.req.valid("param").id);
+    return c.body(null, 204);
   });
 
   app.openapi(authStatusRoute, (c) => {

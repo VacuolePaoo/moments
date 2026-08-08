@@ -194,6 +194,7 @@ export function MomentDateDetail({ date }: { date: string }) {
                   isAdmin={isAdmin}
                   getToken={getToken}
                   showEdited
+                  eagerImages={index === 0}
                   onUpdated={handleUpdated}
                   onDelete={(item) => void handleDelete(item)}
                 />

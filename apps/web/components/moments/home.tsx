@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -179,6 +180,17 @@ export function MomentsHome() {
         </Button>
       ) : null}
       <AuthControls />
+      {isAdmin ? (
+        <Button
+          nativeButton={false}
+          render={<Link href="/trash" />}
+          variant="ghost"
+          className="justify-start"
+        >
+          <Trash2Icon data-icon="inline-start" />
+          回收站
+        </Button>
+      ) : null}
     </div>
   );
 

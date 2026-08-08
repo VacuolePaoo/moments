@@ -12,6 +12,15 @@ export interface PostList {
   nextCursor: string | null;
 }
 
+export interface DeletedMomentPost extends MomentPost {
+  deletedAt: string;
+}
+
+export interface DeletedPostList {
+  items: DeletedMomentPost[];
+  nextCursor: string | null;
+}
+
 export interface DateDetail {
   date: string;
   items: MomentPost[];
@@ -55,7 +64,7 @@ export class MomentsApiError extends Error {
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   token?: string;
-  body?: { content: string };
+  body?: { content: string; images: string[] };
   signal?: AbortSignal;
 }
 
@@ -154,24 +163,26 @@ export function getAuthStatus(
 
 export function createPost(
   content: string,
+  images: string[],
   token: string,
 ): Promise<MomentPost> {
   return request<MomentPost>("/api/v1/posts", {
     method: "POST",
     token,
-    body: { content },
+    body: { content, images },
   });
 }
 
 export function updatePost(
   id: string,
   content: string,
+  images: string[],
   token: string,
 ): Promise<MomentPost> {
   return request<MomentPost>(`/api/v1/posts/${encodeURIComponent(id)}`, {
     method: "PATCH",
     token,
-    body: { content },
+    body: { content, images },
   });
 }
 
@@ -190,4 +201,48 @@ export function restorePost(id: string, token: string): Promise<MomentPost> {
       token,
     },
   );
+}
+
+export function listDeletedPosts(
+  token: string,
+  options: { limit?: number; cursor?: string; signal?: AbortSignal } = {},
+): Promise<DeletedPostList> {
+  const query = new URLSearchParams({ limit: String(options.limit ?? 20) });
+  if (options.cursor) query.set("cursor", options.cursor);
+  return request<DeletedPostList>(`/api/v1/trash?${query.toString()}`, {
+    token,
+    signal: options.signal,
+  });
+}
+
+export function permanentlyDeletePost(
+  id: string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/api/v1/trash/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function uploadImage(file: File, token: string): Promise<string> {
+  const form = new FormData();
+  form.set("file", file, file.name);
+  const response = await fetch("/api/uploads", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    url?: unknown;
+    error?: { message?: unknown };
+  };
+  if (!response.ok || typeof body.url !== "string") {
+    throw new Error(
+      typeof body.error?.message === "string"
+        ? body.error.message
+        : "图片上传失败。",
+    );
+  }
+  return body.url;
 }

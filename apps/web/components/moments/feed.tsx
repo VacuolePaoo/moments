@@ -52,7 +52,7 @@ export function Feed({
   return (
     <div>
       <div className="space-y-12">
-        {groups.map((group) => (
+        {groups.map((group, groupIndex) => (
           <section key={group.date} aria-labelledby={`heading-${group.date}`}>
             <h2
               id={group.date}
@@ -80,6 +80,7 @@ export function Feed({
                     isAdmin={isAdmin}
                     getToken={getToken}
                     showEdited={showEdited}
+                    eagerImages={groupIndex === 0 && index === 0}
                     onUpdated={onUpdated}
                     onDelete={onDelete}
                   />

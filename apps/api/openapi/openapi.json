@@ -150,8 +150,10 @@
               "type": "string",
               "format": "uri"
             },
-            "description": "Reserved for the later image-hosting integration. Empty in the first release.",
-            "example": []
+            "description": "Ordered image URLs attached to this post.",
+            "example": [
+              "https://file.example.com/file/example.jpg"
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -267,14 +269,60 @@
         "properties": {
           "content": {
             "type": "string",
-            "minLength": 1,
+            "default": "",
             "description": "Plain text. Consecutive spaces, tabs and line breaks are normalized before storage."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "default": [],
+            "description": "Ordered image URLs. Text or at least one image is required."
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeletedPostList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeletedPost"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "content"
-        ],
-        "additionalProperties": false
+          "items",
+          "nextCursor"
+        ]
+      },
+      "DeletedPost": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Post"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "deletedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "deletedAt"
+            ]
+          }
+        ]
       },
       "AuthStatus": {
         "type": "object",
@@ -762,7 +810,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Post moved to the future recycle bin."
+            "description": "Post moved to the recycle bin."
           },
           "401": {
             "description": "Authentication required.",
@@ -896,6 +944,217 @@
           },
           "409": {
             "description": "Post is not deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid post ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trash": {
+      "get": {
+        "operationId": "listDeletedPosts",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "List soft-deleted posts",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A newest-deleted-first cursor page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedPostList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trash/{id}": {
+      "delete": {
+        "operationId": "permanentlyDeletePost",
+        "tags": [
+          "Trash"
+        ],
+        "summary": "Permanently delete a soft-deleted post",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stable post ID.",
+              "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+            },
+            "required": true,
+            "description": "Stable post ID.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Post permanently deleted."
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Post is not in the trash.",
             "content": {
               "application/json": {
                 "schema": {

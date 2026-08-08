@@ -1,0 +1,295 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RotateCcwIcon, Trash2Icon } from "lucide-react";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/toast";
+
+import {
+  listDeletedPosts,
+  permanentlyDeletePost,
+  restorePost,
+  retryRead,
+  type DeletedMomentPost,
+} from "./api";
+import { AuthControls, useAdminAccess } from "./auth-controls";
+import { FeedSkeleton } from "./feed";
+import { MomentImages } from "./image-attachments";
+import { MomentsShell } from "./moments-shell";
+import { TextContent } from "./text-content";
+
+const deletedAtFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+export function MomentsTrash() {
+  const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
+  const [posts, setPosts] = useState<DeletedMomentPost[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null | undefined>();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const loadInitial = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("登录状态已失效。");
+      const page = await retryRead(() => listDeletedPosts(token));
+      setPosts(page.items);
+      setNextCursor(page.nextCursor);
+      setError(null);
+    } catch {
+      setError("回收站加载失败，请稍后重试。");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getToken]);
+
+  useEffect(() => {
+    if (isCheckingAdmin) return;
+    if (!isAdmin) return;
+    const timer = window.setTimeout(() => void loadInitial(), 0);
+    return () => window.clearTimeout(timer);
+  }, [isAdmin, isCheckingAdmin, loadInitial]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("登录状态已失效。");
+      const page = await retryRead(() =>
+        listDeletedPosts(token, { cursor: nextCursor }),
+      );
+      setPosts((current) => [...current, ...page.items]);
+      setNextCursor(page.nextCursor);
+      setError(null);
+    } catch {
+      setError("更多已删除内容加载失败。");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [getToken, isLoadingMore, nextCursor]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !nextCursor || error || !isAdmin) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMore();
+      },
+      { rootMargin: "320px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [error, isAdmin, loadMore, nextCursor]);
+
+  async function handleRestore(post: DeletedMomentPost) {
+    setPendingId(post.id);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("登录状态已失效。");
+      await restorePost(post.id, token);
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      toast.add({ description: "已恢复。" });
+    } catch {
+      toast.add({ type: "error", description: "恢复失败，请稍后重试。" });
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function handlePermanentDelete(post: DeletedMomentPost) {
+    setPendingId(post.id);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("登录状态已失效。");
+      await permanentlyDeletePost(post.id, token);
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      toast.add({ description: "已永久删除。" });
+    } catch {
+      toast.add({ type: "error", description: "永久删除失败，请稍后重试。" });
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  const actions = (
+    <div className="flex w-full items-center gap-3 lg:flex-col lg:items-stretch">
+      <Link
+        href="/"
+        className={buttonVariants({ variant: "link", className: "w-fit px-0" })}
+      >
+        返回
+      </Link>
+      <AuthControls />
+    </div>
+  );
+
+  return (
+    <MomentsShell actions={actions}>
+      <h2 className="mb-12 text-[1.602rem] leading-[1.5] font-semibold">
+        回收站
+      </h2>
+
+      {isCheckingAdmin || (isAdmin && isLoading) ? <FeedSkeleton /> : null}
+
+      {!isCheckingAdmin && !isAdmin ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>请使用管理员账号登录</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+
+      {isAdmin && !isLoading && error && posts.length === 0 ? (
+        <div className="flex items-center gap-3" role="alert">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={loadInitial}
+          >
+            重试
+          </Button>
+        </div>
+      ) : null}
+
+      {isAdmin && !isLoading && !error && posts.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>回收站是空的</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+
+      {isAdmin && posts.length > 0 ? (
+        <div>
+          {posts.map((post, index) => (
+            <div key={post.id}>
+              {index > 0 ? <Separator className="my-6" /> : null}
+              <TrashItem
+                post={post}
+                pending={pendingId === post.id}
+                onRestore={() => void handleRestore(post)}
+                onPermanentDelete={() => void handlePermanentDelete(post)}
+              />
+            </div>
+          ))}
+          {error ? (
+            <div className="mt-12 flex items-center gap-3" role="alert">
+              <p className="text-sm text-muted-foreground">{error}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={loadMore}
+              >
+                重试
+              </Button>
+            </div>
+          ) : null}
+          {isLoadingMore ? <FeedSkeleton className="mt-12" /> : null}
+        </div>
+      ) : null}
+      <div ref={sentinelRef} className="h-px" aria-hidden="true" />
+    </MomentsShell>
+  );
+}
+
+function TrashItem({
+  post,
+  pending,
+  onRestore,
+  onPermanentDelete,
+}: {
+  post: DeletedMomentPost;
+  pending: boolean;
+  onRestore: () => void;
+  onPermanentDelete: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  return (
+    <article className="flex min-w-0 flex-col gap-4">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          删除于 {deletedAtFormatter.format(new Date(post.deletedAt))}
+        </p>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            onClick={onRestore}
+          >
+            {pending ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RotateCcwIcon data-icon="inline-start" />
+            )}
+            恢复
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={pending}
+            onClick={() => setConfirmOpen(true)}
+          >
+            <Trash2Icon data-icon="inline-start" />
+            永久删除
+          </Button>
+        </div>
+      </div>
+      <MomentImages images={post.images} />
+      {post.content ? <TextContent content={post.content} /> : null}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>永久删除这条说说？</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作无法撤销，已上传到图床的图片不会同时删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={onPermanentDelete}
+            >
+              永久删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </article>
+  );
+}

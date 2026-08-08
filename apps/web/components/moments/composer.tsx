@@ -1,28 +1,17 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, useState } from "react";
-import { EllipsisIcon, Trash2Icon } from "lucide-react";
-
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  forwardRef,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
+import { CornerDownLeftIcon, ImagePlusIcon } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -34,6 +23,13 @@ import {
 
 import { createPost, type MomentPost } from "./api";
 import { publishDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
+import {
+  EditableImageAttachments,
+  editableImagesFromFiles,
+  releaseEditableImage,
+  uploadEditableImages,
+  type EditableImage,
+} from "./image-attachments";
 
 interface ComposerProps {
   getToken: () => Promise<string | null>;
@@ -43,29 +39,27 @@ interface ComposerProps {
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
   function Composer({ getToken, onCreated }, ref) {
     const [content, setContent] = useState("");
+    const [images, setImages] = useState<EditableImage[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [draftStatus, setDraftStatus] = useState("保存草稿");
-    const [clearDialogOpen, setClearDialogOpen] = useState(false);
-    const statusTimer = useRef<number | null>(null);
+    const [draftSaved, setDraftSaved] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const imagesRef = useRef(images);
     const draftKey = publishDraftKey();
 
     useEffect(() => {
+      imagesRef.current = images;
+    }, [images]);
+
+    useEffect(() => {
       const draft = readDraft(draftKey);
-      if (!draft?.content) return;
-      setContent(draft.content);
-      toast.add({ type: "info", description: "已恢复草稿。" });
+      if (draft?.content) setContent(draft.content);
     }, [draftKey]);
 
     useEffect(() => {
       if (!content) return;
       const timer = window.setTimeout(() => {
-        setDraftStatus("自动保存");
         const saved = writeDraft(draftKey, content);
-        if (statusTimer.current) window.clearTimeout(statusTimer.current);
-        statusTimer.current = window.setTimeout(
-          () => setDraftStatus(saved ? "保存成功" : "保存草稿"),
-          400,
-        );
+        setDraftSaved(saved);
         if (!saved) toast.add({ type: "error", description: "草稿保存失败。" });
       }, 5000);
       return () => window.clearTimeout(timer);
@@ -73,148 +67,151 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
 
     useEffect(
       () => () => {
-        if (statusTimer.current) window.clearTimeout(statusTimer.current);
+        imagesRef.current.forEach(releaseEditableImage);
       },
       [],
     );
 
-    function saveDraftManually() {
-      const saved = writeDraft(draftKey, content);
-      setDraftStatus(saved ? "保存成功" : "保存草稿");
-      if (!saved) toast.add({ type: "error", description: "草稿保存失败。" });
+    function updateImage(id: string, values: Partial<EditableImage>) {
+      setImages((current) =>
+        current.map((image) =>
+          image.id === id ? { ...image, ...values } : image,
+        ),
+      );
     }
 
-    function clearDraft() {
-      setContent("");
-      removeDraft(draftKey);
-      setDraftStatus("保存草稿");
-      setClearDialogOpen(false);
+    function handleContentChange(value: string) {
+      setContent(value);
+      setDraftSaved(false);
+      if (!value) removeDraft(draftKey);
+    }
+
+    function addImages(event: ChangeEvent<HTMLInputElement>) {
+      const selected = Array.from(event.target.files ?? []).filter((file) =>
+        file.type.startsWith("image/"),
+      );
+      if (selected.length > 0) {
+        setImages((current) => [
+          ...current,
+          ...editableImagesFromFiles(selected),
+        ]);
+      }
+      event.target.value = "";
+    }
+
+    function removeImage(image: EditableImage) {
+      releaseEditableImage(image);
+      setImages((current) => current.filter((item) => item.id !== image.id));
     }
 
     async function publish() {
-      if (!content.trim() || isSubmitting) return;
+      if ((!content.trim() && images.length === 0) || isSubmitting) return;
       setIsSubmitting(true);
       try {
         const token = await getToken();
         if (!token) throw new Error("登录状态已失效。");
-        const post = await createPost(content, token);
+        const imageUrls = await uploadEditableImages(
+          images,
+          token,
+          updateImage,
+        );
+        const post = await createPost(content, imageUrls, token);
         onCreated(post);
+        images.forEach(releaseEditableImage);
+        setImages([]);
         setContent("");
         removeDraft(draftKey);
-        setDraftStatus("保存草稿");
-      } catch {
-        toast.add({ type: "error", description: "发布失败，请稍后重试。" });
+        setDraftSaved(false);
+      } catch (error) {
+        toast.add({
+          type: "error",
+          description:
+            error instanceof Error ? error.message : "发布失败，请稍后重试。",
+        });
       } finally {
         setIsSubmitting(false);
       }
     }
 
+    const canPublish = content.trim().length > 0 || images.length > 0;
+
     return (
-      <>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void publish();
-          }}
-        >
-          <Card>
-            <CardContent>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="moment-composer" className="sr-only">
-                    发布说说
-                  </FieldLabel>
-                  <Textarea
-                    ref={ref}
-                    id="moment-composer"
-                    value={content}
-                    onChange={(event) => {
-                      setContent(event.target.value);
-                      setDraftStatus("保存草稿");
-                    }}
-                    onKeyDown={(event) => {
-                      if (
-                        (event.ctrlKey || event.metaKey) &&
-                        event.key === "Enter"
-                      ) {
-                        event.preventDefault();
-                        void publish();
-                      }
-                    }}
-                    className="min-h-32 resize-none text-base leading-6 md:text-base"
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void publish();
+        }}
+      >
+        <Card>
+          <CardContent className="flex flex-col gap-3">
+            <EditableImageAttachments
+              images={images}
+              disabled={isSubmitting}
+              onRemove={removeImage}
+            />
+            <Label htmlFor="moment-composer" className="sr-only">
+              发布说说
+            </Label>
+            <Textarea
+              ref={ref}
+              id="moment-composer"
+              value={content}
+              onChange={(event) => handleContentChange(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void publish();
+                }
+              }}
+              className="min-h-32 resize-none text-base leading-6 md:text-base"
+              disabled={isSubmitting}
+            />
+          </CardContent>
+          <CardFooter className="justify-between gap-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              tabIndex={-1}
+              onChange={addImages}
+            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="添加图片"
+                    disabled={isSubmitting}
+                    onClick={() => fileInputRef.current?.click()}
                   />
-                </Field>
-              </FieldGroup>
-            </CardContent>
-            <CardFooter className="justify-between gap-4">
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={saveDraftManually}
-                  disabled={!content || isSubmitting}
-                >
-                  {draftStatus}
-                </Button>
-                <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label="更多草稿操作"
-                            />
-                          }
-                        />
-                      }
-                    >
-                      <EllipsisIcon />
-                    </TooltipTrigger>
-                    <TooltipContent>更多草稿操作</TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuGroup>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        disabled={!content}
-                        onClick={() => setClearDialogOpen(true)}
-                      >
-                        <Trash2Icon />
-                        清空草稿
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <Button type="submit" disabled={!content.trim() || isSubmitting}>
+                }
+              >
+                <ImagePlusIcon />
+              </TooltipTrigger>
+              <TooltipContent>添加图片</TooltipContent>
+            </Tooltip>
+
+            <div className="flex items-center gap-3">
+              {draftSaved ? (
+                <span className="text-sm text-muted-foreground opacity-70">
+                  已自动保存
+                </span>
+              ) : null}
+              <Button type="submit" disabled={!canPublish || isSubmitting}>
                 {isSubmitting ? <Spinner data-icon="inline-start" /> : null}
                 {isSubmitting ? "发布中" : "发布"}
+                {!isSubmitting ? (
+                  <CornerDownLeftIcon data-icon="inline-end" />
+                ) : null}
               </Button>
-            </CardFooter>
-          </Card>
-        </form>
-
-        <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>清空草稿？</AlertDialogTitle>
-              <AlertDialogDescription>
-                清空后无法从当前浏览器恢复。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" onClick={clearDraft}>
-                清空
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </>
+            </div>
+          </CardFooter>
+        </Card>
+      </form>
     );
   },
 );

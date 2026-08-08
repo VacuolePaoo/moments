@@ -12,9 +12,8 @@ export const PostSchema = z
     id: PostIdSchema,
     content: z.string().openapi({ example: "今天完成了 Moments API。" }),
     images: z.array(z.url()).openapi({
-      description:
-        "Reserved for the later image-hosting integration. Empty in the first release.",
-      example: [],
+      description: "Ordered image URLs attached to this post.",
+      example: ["https://file.example.com/file/example.jpg"],
     }),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
@@ -32,6 +31,21 @@ export const PostListSchema = z
   .openapi("PostList");
 
 export type PostList = z.infer<typeof PostListSchema>;
+
+export const DeletedPostSchema = PostSchema.extend({
+  deletedAt: z.iso.datetime({ offset: true }),
+}).openapi("DeletedPost");
+
+export type DeletedPost = z.infer<typeof DeletedPostSchema>;
+
+export const DeletedPostListSchema = z
+  .object({
+    items: z.array(DeletedPostSchema),
+    nextCursor: z.string().nullable(),
+  })
+  .openapi("DeletedPostList");
+
+export type DeletedPostList = z.infer<typeof DeletedPostListSchema>;
 
 export const ShanghaiDateSchema = z
   .string()
@@ -67,11 +81,19 @@ export type DateDetail = z.infer<typeof DateDetailSchema>;
 
 export const WritePostSchema = z
   .strictObject({
-    content: z.string().min(1).openapi({
+    content: z.string().default("").openapi({
       description:
         "Plain text. Consecutive spaces, tabs and line breaks are normalized before storage.",
     }),
+    images: z.array(z.url()).default([]).openapi({
+      description:
+        "Ordered image URLs. Text or at least one image is required.",
+    }),
   })
+  .refine(
+    ({ content, images }) => content.trim().length > 0 || images.length > 0,
+    { message: "Text or at least one image is required." },
+  )
   .openapi("WritePost");
 
 export const ErrorDetailSchema = z.object({

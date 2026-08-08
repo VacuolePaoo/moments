@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.31.0",
   "scripts": {
     "dev:api": "pnpm --filter @moments/api dev",
-    "deploy:api": "pnpm --filter @moments/api deploy",
+    "deploy:api": "pnpm --filter @moments/api run deploy",
     "check": "pnpm --filter @moments/api check",
     "test": "pnpm --filter @moments/api test",
     "openapi:generate": "pnpm --filter @moments/api openapi:generate"

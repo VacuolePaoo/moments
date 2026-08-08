@@ -49,6 +49,8 @@ describe("Moments API", () => {
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}/restore");
     expect(document.paths).toHaveProperty("/api/v1/dates/{date}");
+    expect(document.paths).toHaveProperty("/api/v1/trash");
+    expect(document.paths).toHaveProperty("/api/v1/trash/{id}");
   });
 
   it("requires Clerk authentication for writes", async () => {
@@ -71,16 +73,45 @@ describe("Moments API", () => {
     expect(response.status).toBe(403);
   });
 
-  it("rejects image fields until the image API is implemented", async () => {
+  it("creates and updates image-only posts", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
     const response = await createApp({ tokenVerifier: adminVerifier }).request(
       "/api/v1/posts",
       jsonRequest("POST", {
-        content: "x",
+        content: "",
         images: ["https://file.vacu.top/file/test.png"],
       }),
       env,
     );
-    expect(response.status).toBe(422);
+    expect(response.status).toBe(201);
+    const created = await response.json<{
+      id: string;
+      content: string;
+      images: string[];
+    }>();
+    expect(created.content).toBe("");
+    expect(created.images).toEqual(["https://file.vacu.top/file/test.png"]);
+
+    const updatedResponse = await app.request(
+      `/api/v1/posts/${created.id}`,
+      jsonRequest("PATCH", {
+        content: "增加文字",
+        images: ["https://file.vacu.top/file/updated.png"],
+      }),
+      env,
+    );
+    expect(updatedResponse.status).toBe(200);
+    await expect(updatedResponse.json()).resolves.toMatchObject({
+      content: "增加文字",
+      images: ["https://file.vacu.top/file/updated.png"],
+    });
+
+    const emptyResponse = await app.request(
+      `/api/v1/posts/${created.id}`,
+      jsonRequest("PATCH", { content: "", images: [] }),
+      env,
+    );
+    expect(emptyResponse.status).toBe(422);
   });
 
   it("creates, normalizes, updates, navigates, paginates and soft-deletes posts", async () => {
@@ -315,6 +346,105 @@ describe("Moments API", () => {
       env,
     );
     expect(preflight.status).toBe(204);
+  });
+
+  it("lists, restores and permanently deletes posts in the trash", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    const firstResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "恢复我" }),
+      env,
+    );
+    const first = await firstResponse.json<{ id: string }>();
+    const secondResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "永久删除我" }),
+      env,
+    );
+    const second = await secondResponse.json<{ id: string }>();
+
+    await app.request(`/api/v1/posts/${first.id}`, jsonRequest("DELETE"), env);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await app.request(`/api/v1/posts/${second.id}`, jsonRequest("DELETE"), env);
+
+    const unauthenticated = await createApp().request(
+      "/api/v1/trash",
+      { headers: { Origin: env.ALLOWED_ORIGIN } },
+      env,
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const forbidden = await createApp({
+      tokenVerifier: nonAdminVerifier,
+    }).request("/api/v1/trash", jsonRequest("GET"), env);
+    expect(forbidden.status).toBe(403);
+
+    const listResponse = await app.request(
+      "/api/v1/trash?limit=1",
+      jsonRequest("GET"),
+      env,
+    );
+    expect(listResponse.status).toBe(200);
+    const trash = await listResponse.json<{
+      items: Array<{ id: string; deletedAt: string }>;
+      nextCursor: string | null;
+    }>();
+    expect(trash.items.map((item) => item.id)).toEqual([second.id]);
+    expect(trash.items.every((item) => item.deletedAt.length > 0)).toBe(true);
+    expect(trash.nextCursor).not.toBeNull();
+
+    const secondPageResponse = await app.request(
+      `/api/v1/trash?limit=1&cursor=${encodeURIComponent(trash.nextCursor ?? "")}`,
+      jsonRequest("GET"),
+      env,
+    );
+    const secondPage = await secondPageResponse.json<{
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    }>();
+    expect(secondPage.items.map((item) => item.id)).toEqual([first.id]);
+    expect(secondPage.nextCursor).toBeNull();
+
+    expect(
+      (
+        await app.request(
+          `/api/v1/posts/${first.id}/restore`,
+          jsonRequest("POST"),
+          env,
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await app.request(
+          `/api/v1/trash/${second.id}`,
+          jsonRequest("DELETE"),
+          env,
+        )
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await app.request(
+          `/api/v1/trash/${first.id}`,
+          jsonRequest("DELETE"),
+          env,
+        )
+      ).status,
+    ).toBe(409);
+
+    const remainingResponse = await app.request(
+      "/api/v1/trash",
+      jsonRequest("GET"),
+      env,
+    );
+    await expect(remainingResponse.json()).resolves.toMatchObject({
+      items: [],
+    });
+    const deletedRow = await env.DB.prepare("SELECT id FROM posts WHERE id = ?")
+      .bind(second.id)
+      .first<{ id: string }>();
+    expect(deletedRow).toBeNull();
   });
 
   it("rejects invalid cursors and disallowed browser origins", async () => {
