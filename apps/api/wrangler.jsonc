@@ -4,14 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-07",
   "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "ALLOWED_ORIGIN": "https://moment.vacu.top",
-  },
+  "keep_vars": true,
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "moments",
-      "database_id": "c5bbe224-574a-42bb-90ec-df0ad72c5955",
       "migrations_dir": "migrations",
     },
   ],

@@ -9,7 +9,10 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            ALLOWED_ORIGIN: "http://localhost:3000",
+            TEST_MIGRATIONS: migrations,
+          },
         },
       }),
     ],

@@ -23,7 +23,13 @@ Public endpoints work without Clerk configuration. To test authenticated endpoin
 
 ## Database
 
-The D1 binding is `DB`; the database name is `moments`. Apply migrations explicitly:
+The D1 binding is `DB`. The repository intentionally does not contain a D1
+database name or ID. On the first `wrangler deploy`, Wrangler automatically
+creates a D1 database and binds it to the Worker. When deploying from a Git
+integration, the generated resource ID remains in Cloudflare and is not written
+back to the repository.
+
+Apply migrations explicitly after the first deployment:
 
 ```bash
 pnpm db:migrate:local
@@ -41,4 +47,7 @@ wrangler secret put CLERK_JWT_KEY
 wrangler secret put ADMIN_CLERK_USER_ID
 ```
 
-Set the real frontend origin in the deployed Worker's `ALLOWED_ORIGIN` variable before production use.
+Set `ALLOWED_ORIGIN` to the real frontend origin in the deployed Worker's
+**Settings > Variables and Secrets** before production use. It is intentionally
+absent from `wrangler.jsonc`; `keep_vars` prevents later deployments from
+removing values managed in the Cloudflare dashboard.

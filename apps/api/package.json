@@ -15,10 +15,10 @@
     "openapi:generate": "tsx scripts/generate-openapi.ts",
     "openapi:check": "tsx scripts/check-openapi.ts",
     "check": "pnpm types:worker && pnpm typecheck && pnpm lint && pnpm test && pnpm openapi:check && pnpm deploy:dry-run",
-    "db:migrate:local": "wrangler d1 migrations apply moments --local",
-    "db:migrate:remote": "wrangler d1 migrations apply moments --remote",
-    "db:list:local": "wrangler d1 execute moments --local --command \"SELECT id, content, created_at, updated_at, deleted_at FROM posts ORDER BY created_at DESC\"",
-    "db:list:remote": "wrangler d1 execute moments --remote --command \"SELECT id, content, created_at, updated_at, deleted_at FROM posts ORDER BY created_at DESC\""
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:list:local": "wrangler d1 execute DB --local --command \"SELECT id, content, created_at, updated_at, deleted_at FROM posts ORDER BY created_at DESC\"",
+    "db:list:remote": "wrangler d1 execute DB --remote --command \"SELECT id, content, created_at, updated_at, deleted_at FROM posts ORDER BY created_at DESC\""
   },
   "dependencies": {
     "@clerk/backend": "^3.16.0",
