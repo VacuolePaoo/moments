@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "moments",
-      "database_id": "fa855adc-7844-4220-9035-d4cbc7b54e1b",
+      "database_id": "c5bbe224-574a-42bb-90ec-df0ad72c5955",
       "migrations_dir": "migrations",
     },
   ],
