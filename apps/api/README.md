@@ -24,17 +24,28 @@ Public endpoints work without Clerk configuration. To test authenticated endpoin
 ## Database
 
 The D1 binding is `DB`. The repository intentionally does not contain a D1
-database name or ID. On the first `wrangler deploy`, Wrangler automatically
-creates a D1 database and binds it to the Worker. When deploying from a Git
-integration, the generated resource ID remains in Cloudflare and is not written
-back to the repository.
-
-Apply migrations explicitly after the first deployment:
+database name or ID. The deployment script first lets Wrangler create and bind
+the database, then applies every pending migration to create or update its
+tables:
 
 ```bash
-pnpm db:migrate:local
-pnpm db:migrate:remote
+# From the repository root
+pnpm deploy:api
+
+# Or from apps/api
+pnpm deploy
 ```
+
+Use the same command for later deployments; already applied migrations are not
+run again. In Cloudflare Workers Builds, set the deploy command to
+`pnpm deploy:api` when the root directory is the repository root, or
+`pnpm deploy` when the root directory is `apps/api`.
+
+When deploying from a Git integration, the generated resource ID remains in
+Cloudflare and is not written back to the repository.
+
+For local development, create the local tables separately with
+`pnpm db:migrate:local`.
 
 Local Wrangler state is separate from the remote test database unless a command includes `--remote`.
 
