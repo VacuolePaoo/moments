@@ -33,10 +33,10 @@ function resolveUploadedUrl(
   result: ImgBedUploadResult,
 ): string | null {
   const value =
-    typeof result.publicUrl === "string"
-      ? result.publicUrl
-      : typeof result.src === "string"
-        ? result.src
+    typeof result.src === "string"
+      ? result.src
+      : typeof result.publicUrl === "string"
+        ? result.publicUrl
         : null;
   if (!value) return null;
   try {

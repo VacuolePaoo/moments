@@ -3,7 +3,16 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import type { AppEnv } from "../types";
 
-export type ApiErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 500 | 503;
+export type ApiErrorStatus =
+  | 400
+  | 401
+  | 403
+  | 404
+  | 409
+  | 422
+  | 500
+  | 502
+  | 503;
 
 export interface ErrorDetail {
   path: string;

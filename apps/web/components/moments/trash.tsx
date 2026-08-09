@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RotateCcwIcon, Trash2Icon } from "lucide-react";
 
@@ -14,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,10 +26,11 @@ import {
   retryRead,
   type DeletedMomentPost,
 } from "./api";
-import { AuthControls, useAdminAccess } from "./auth-controls";
+import { useAdminAccess } from "./auth-controls";
 import { FeedSkeleton } from "./feed";
 import { MomentImages } from "./image-attachments";
 import { MomentsShell } from "./moments-shell";
+import { MomentsToolbar } from "./moments-toolbar";
 import { TextContent } from "./text-content";
 
 const deletedAtFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -138,20 +138,8 @@ export function MomentsTrash() {
     }
   }
 
-  const actions = (
-    <div className="flex w-full items-center gap-3 lg:flex-col lg:items-stretch">
-      <Link
-        href="/"
-        className={buttonVariants({ variant: "link", className: "w-fit px-0" })}
-      >
-        返回
-      </Link>
-      <AuthControls />
-    </div>
-  );
-
   return (
-    <MomentsShell actions={actions}>
+    <MomentsShell toolbar={<MomentsToolbar isAdmin={isAdmin} />}>
       <h2 className="mb-12 text-[1.602rem] leading-[1.5] font-semibold">
         回收站
       </h2>
@@ -276,7 +264,7 @@ function TrashItem({
           <AlertDialogHeader>
             <AlertDialogTitle>永久删除这条说说？</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作无法撤销，已上传到图床的图片不会同时删除。
+              此操作无法撤销，已上传到图床的图片也会同时删除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

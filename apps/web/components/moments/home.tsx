@@ -1,10 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PlusIcon, Trash2Icon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 
 import {
@@ -14,11 +11,12 @@ import {
   retryRead,
   type MomentPost,
 } from "./api";
-import { AuthControls, useAdminAccess } from "./auth-controls";
+import { useAdminAccess } from "./auth-controls";
 import { Composer } from "./composer";
 import { isValidDate, mergePosts } from "./date";
 import { Feed } from "./feed";
 import { MomentsShell } from "./moments-shell";
+import { MomentsToolbar } from "./moments-toolbar";
 
 function readHashDate(): string | undefined {
   try {
@@ -167,35 +165,15 @@ export function MomentsHome() {
     }
   }
 
-  const actions = (
-    <div className="flex w-full items-center gap-3 lg:flex-col lg:items-stretch">
-      {isAdmin ? (
-        <Button
-          type="button"
-          className="lg:w-full"
-          onClick={() => composerRef.current?.focus()}
-        >
-          <PlusIcon data-icon="inline-start" />
-          发布
-        </Button>
-      ) : null}
-      <AuthControls />
-      {isAdmin ? (
-        <Button
-          nativeButton={false}
-          render={<Link href="/trash" />}
-          variant="ghost"
-          className="justify-start"
-        >
-          <Trash2Icon data-icon="inline-start" />
-          回收站
-        </Button>
-      ) : null}
-    </div>
-  );
-
   return (
-    <MomentsShell actions={actions}>
+    <MomentsShell
+      toolbar={
+        <MomentsToolbar
+          isAdmin={isAdmin}
+          onPublish={() => composerRef.current?.focus()}
+        />
+      }
+    >
       {isAdmin ? (
         <div className="mb-12">
           <Composer

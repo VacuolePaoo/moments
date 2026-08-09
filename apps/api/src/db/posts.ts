@@ -376,6 +376,31 @@ export async function restorePost(db: D1Database, id: string): Promise<Post> {
   return getPost(db, id);
 }
 
+export async function getDeletedPost(
+  db: D1Database,
+  id: string,
+): Promise<DeletedPost> {
+  const deleted = await db
+    .prepare(
+      `SELECT ${postColumns}, deleted_at
+       FROM posts
+       WHERE id = ? AND deleted_at IS NOT NULL`,
+    )
+    .bind(id)
+    .first<DeletedPostRow>();
+
+  if (deleted !== null) return toDeletedPost(deleted);
+
+  const existing = await db
+    .prepare("SELECT id FROM posts WHERE id = ?")
+    .bind(id)
+    .first<IdRow>();
+  if (existing === null) {
+    throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
+  }
+  throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
+}
+
 export async function permanentlyDeletePost(
   db: D1Database,
   id: string,

@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app";
+import { ApiError } from "../src/lib/errors";
 import type { TokenVerifier } from "../src/types";
 
 const adminVerifier: TokenVerifier = () =>
@@ -349,7 +350,14 @@ describe("Moments API", () => {
   });
 
   it("lists, restores and permanently deletes posts in the trash", async () => {
-    const app = createApp({ tokenVerifier: adminVerifier });
+    const deletedImageBatches: string[][] = [];
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: (images) => {
+        deletedImageBatches.push(images);
+        return Promise.resolve();
+      },
+    });
     const firstResponse = await app.request(
       "/api/v1/posts",
       jsonRequest("POST", { content: "恢复我" }),
@@ -358,7 +366,10 @@ describe("Moments API", () => {
     const first = await firstResponse.json<{ id: string }>();
     const secondResponse = await app.request(
       "/api/v1/posts",
-      jsonRequest("POST", { content: "永久删除我" }),
+      jsonRequest("POST", {
+        content: "永久删除我",
+        images: ["https://file.vacu.top/file/moments/delete-me.png"],
+      }),
       env,
     );
     const second = await secondResponse.json<{ id: string }>();
@@ -445,6 +456,46 @@ describe("Moments API", () => {
       .bind(second.id)
       .first<{ id: string }>();
     expect(deletedRow).toBeNull();
+    expect(deletedImageBatches).toEqual([
+      ["https://file.vacu.top/file/moments/delete-me.png"],
+    ]);
+  });
+
+  it("keeps a trashed post when hosted image deletion fails", async () => {
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: () =>
+        Promise.reject(
+          new ApiError(
+            502,
+            "IMAGE_DELETE_FAILED",
+            "Hosted image deletion failed.",
+          ),
+        ),
+    });
+    const createResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", {
+        content: "保留到重试",
+        images: ["https://file.vacu.top/file/moments/retry.png"],
+      }),
+      env,
+    );
+    const post = await createResponse.json<{ id: string }>();
+    await app.request(`/api/v1/posts/${post.id}`, jsonRequest("DELETE"), env);
+
+    const response = await app.request(
+      `/api/v1/trash/${post.id}`,
+      jsonRequest("DELETE"),
+      env,
+    );
+    expect(response.status).toBe(502);
+    const retained = await env.DB.prepare(
+      "SELECT deleted_at FROM posts WHERE id = ?",
+    )
+      .bind(post.id)
+      .first<{ deleted_at: string | null }>();
+    expect(retained?.deleted_at).not.toBeNull();
   });
 
   it("rejects invalid cursors and disallowed browser origins", async () => {

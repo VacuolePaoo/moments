@@ -223,9 +223,9 @@ export function MomentItem({
   const canSave = content.trim().length > 0 || images.length > 0;
 
   return (
-    <article className="relative min-w-0">
+    <article className="group/moment relative min-w-0">
       {isAdmin && !isEditing ? (
-        <div className="absolute -top-1 right-0">
+        <div className="absolute -top-1 right-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100">
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger

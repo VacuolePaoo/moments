@@ -9,6 +9,7 @@ import {
 import {
   createPost,
   getDateDetail,
+  getDeletedPost,
   getPost,
   getPostNavigation,
   listDeletedPosts,
@@ -21,6 +22,7 @@ import {
 import { normalizeContent } from "./lib/content";
 import { ApiError, errorBody, errorResponse } from "./lib/errors";
 import { openApiConfig } from "./openapi";
+import { deleteImgBedImages } from "./services/imgbed";
 import {
   AuthStatusSchema,
   DateDetailSchema,
@@ -34,7 +36,7 @@ import {
   ShanghaiDateSchema,
   WritePostSchema,
 } from "./schemas";
-import type { AppEnv, TokenVerifier } from "./types";
+import type { AppEnv, ImageDeleter, TokenVerifier } from "./types";
 
 const jsonContent = <T extends z.ZodType>(schema: T) => ({
   "application/json": { schema },
@@ -284,18 +286,21 @@ const permanentlyDeletePostRoute = createRoute({
   path: "/api/v1/trash/{id}",
   operationId: "permanentlyDeletePost",
   tags: ["Trash"],
-  summary: "Permanently delete a soft-deleted post",
+  summary: "Permanently delete a post and its managed hosted images",
   security: [{ ClerkBearer: [] }],
   request: { params: z.object({ id: PostIdSchema }) },
   responses: {
-    204: { description: "Post permanently deleted." },
+    204: { description: "Hosted images and post permanently deleted." },
     401: errorResponseDefinition("Authentication required."),
     403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
     409: errorResponseDefinition("Post is not in the trash."),
     422: errorResponseDefinition("Invalid post ID."),
+    502: errorResponseDefinition("Hosted image deletion failed."),
     500: errorResponseDefinition("Unexpected server error."),
-    503: errorResponseDefinition("Authentication is not configured."),
+    503: errorResponseDefinition(
+      "Authentication or hosted image deletion is not configured.",
+    ),
   },
 });
 
@@ -334,10 +339,12 @@ const healthRoute = createRoute({
 
 export interface CreateAppOptions {
   tokenVerifier?: TokenVerifier;
+  imageDeleter?: ImageDeleter;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const tokenVerifier = options.tokenVerifier ?? verifyClerkSession;
+  const imageDeleter = options.imageDeleter ?? deleteImgBedImages;
   const app = new OpenAPIHono<AppEnv>({
     defaultHook: (result, c) => {
       if (result.success) return undefined;
@@ -470,7 +477,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(permanentlyDeletePostRoute, async (c) => {
-    await permanentlyDeletePost(c.env.DB, c.req.valid("param").id);
+    const { id } = c.req.valid("param");
+    const post = await getDeletedPost(c.env.DB, id);
+    await imageDeleter(post.images, c.env);
+    await permanentlyDeletePost(c.env.DB, id);
     return c.body(null, 204);
   });
 

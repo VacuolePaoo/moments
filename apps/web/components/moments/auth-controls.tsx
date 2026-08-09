@@ -1,24 +1,78 @@
 "use client";
 
-import { Show, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
+import {
+  Show,
+  SignInButton,
+  UserButton,
+  useAuth,
+  useUser,
+} from "@clerk/nextjs";
 import { useEffect, useState } from "react";
+import { LogInIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 import { getAuthStatus } from "./api";
 
-export function AuthControls() {
+export function AuthControls({ compact = false }: { compact?: boolean }) {
+  const { user } = useUser();
+  const userName =
+    user?.fullName ??
+    user?.username ??
+    user?.primaryEmailAddress?.emailAddress ??
+    "当前用户";
+
   return (
-    <div className="flex min-h-8 items-center">
+    <div
+      className={cn(
+        "flex items-center justify-center",
+        compact ? "size-11" : "min-h-8",
+      )}
+    >
       <Show when="signed-out">
         <SignInButton mode="modal">
-          <Button type="button" variant="ghost">
-            登录
+          <Button
+            type="button"
+            variant="ghost"
+            size={compact ? "icon-lg" : "default"}
+            className={compact ? "size-11 rounded-full!" : undefined}
+            aria-label={compact ? "登录" : undefined}
+          >
+            {compact ? <LogInIcon /> : "登录"}
           </Button>
         </SignInButton>
       </Show>
       <Show when="signed-in">
-        <UserButton />
+        {compact ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="flex size-11 items-center justify-center rounded-full" />
+              }
+            >
+              <UserButton
+                appearance={{
+                  elements: {
+                    rootBox: "size-11",
+                    userButtonTrigger: "size-11 rounded-full",
+                    userButtonBox: "size-11",
+                    avatarBox: "size-11!",
+                    avatarImage: "size-full!",
+                  },
+                }}
+              />
+            </TooltipTrigger>
+            <TooltipContent>{userName}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <UserButton />
+        )}
       </Show>
     </div>
   );

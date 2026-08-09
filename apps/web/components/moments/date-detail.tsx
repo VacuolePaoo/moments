@@ -29,6 +29,7 @@ import { formatDateHeading, mergePosts } from "./date";
 import { FeedSkeleton } from "./feed";
 import { MomentItem } from "./moment-item";
 import { MomentsShell } from "./moments-shell";
+import { MomentsToolbar } from "./moments-toolbar";
 
 export function MomentDateDetail({ date }: { date: string }) {
   const router = useRouter();
@@ -131,17 +132,8 @@ export function MomentDateDetail({ date }: { date: string }) {
     }
   }
 
-  const actions = (
-    <Link
-      href={`/#${date}`}
-      className={buttonVariants({ variant: "link", className: "w-fit px-0" })}
-    >
-      返回
-    </Link>
-  );
-
   return (
-    <MomentsShell actions={actions}>
+    <MomentsShell toolbar={<MomentsToolbar isAdmin={isAdmin} />}>
       {isLoading ? <FeedSkeleton /> : null}
 
       {!isLoading && error ? (

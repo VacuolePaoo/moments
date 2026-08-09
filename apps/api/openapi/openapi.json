@@ -1099,7 +1099,7 @@
         "tags": [
           "Trash"
         ],
-        "summary": "Permanently delete a soft-deleted post",
+        "summary": "Permanently delete a post and its managed hosted images",
         "security": [
           {
             "ClerkBearer": []
@@ -1121,7 +1121,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Post permanently deleted."
+            "description": "Hosted images and post permanently deleted."
           },
           "401": {
             "description": "Authentication required.",
@@ -1183,8 +1183,18 @@
               }
             }
           },
+          "502": {
+            "description": "Hosted image deletion failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "Authentication or hosted image deletion is not configured.",
             "content": {
               "application/json": {
                 "schema": {

@@ -11,6 +11,8 @@ export default defineConfig(async () => {
         miniflare: {
           bindings: {
             ALLOWED_ORIGIN: "http://localhost:3000",
+            CFBED_BASE_URL: "https://file.example.com",
+            CFBED_API_TOKEN: "test-delete-token",
             TEST_MIGRATIONS: migrations,
           },
         },
