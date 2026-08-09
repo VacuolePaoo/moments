@@ -1,5 +1,11 @@
-# Copy to .dev.vars. Never commit real values.
-# Clerk Dashboard -> API keys -> Show JWT public key -> PEM Public Key.
+# 前端站点源地址：只填写协议和域名，不要带路径或末尾斜杠。
 ALLOWED_ORIGIN="http://localhost:3000"
+
+# Clerk 鉴权：JWT 公钥使用 PEM 格式，换行可以写成 \n。在worker创建变量直接粘贴
 CLERK_JWT_KEY="-----BEGIN PUBLIC KEY-----\nreplace-me\n-----END PUBLIC KEY-----"
+# ADMIN_CLERK_USER_ID 必须是唯一管理员的 user_... ID。
 ADMIN_CLERK_USER_ID="user_replace_me"
+
+# CloudFlare ImgBed 删除服务：填写自己的站点源地址和 delete 权限 Token。
+CFBED_BASE_URL="https://file.example.com"
+CFBED_API_TOKEN="replace-with-an-imgbed-token-that-has-delete-permission"
