@@ -34,24 +34,26 @@ function ToolbarButton({
   reserved?: boolean;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-lg"
-            className="rounded-full!"
-            aria-label={label}
-            aria-disabled={reserved || onClick === undefined}
-            onClick={onClick}
-          />
-        }
-      >
-        <Icon />
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <span className="inline-flex">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              className="rounded-full"
+              aria-label={label}
+              aria-disabled={reserved || onClick === undefined}
+              onClick={onClick}
+            />
+          }
+        >
+          <Icon />
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    </span>
   );
 }
 
@@ -63,9 +65,7 @@ export function MomentsToolbar({
   onPublish?: () => void;
 }) {
   const router = useRouter();
-  const publish = isAdmin
-    ? onPublish ?? (() => router.push("/"))
-    : undefined;
+  const publish = isAdmin ? (onPublish ?? (() => router.push("/"))) : undefined;
   const openTrash = isAdmin ? () => router.push("/trash") : undefined;
 
   return (
@@ -81,11 +81,7 @@ export function MomentsToolbar({
           <ToolbarButton label="发布" icon={PlusIcon} onClick={publish} />
           <ToolbarButton label="日历" icon={CalendarDaysIcon} reserved />
           <ToolbarButton label="随机" icon={DicesIcon} reserved />
-          <ToolbarButton
-            label="回收站"
-            icon={Trash2Icon}
-            onClick={openTrash}
-          />
+          <ToolbarButton label="回收站" icon={Trash2Icon} onClick={openTrash} />
           <ToolbarButton label="设置" icon={SettingsIcon} reserved />
         </ButtonGroup>
 

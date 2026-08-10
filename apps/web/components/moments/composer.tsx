@@ -10,7 +10,6 @@ import {
 import { CornerDownLeftIcon, ImagePlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -137,80 +136,78 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
 
     return (
       <form
+        className="flex w-full flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           void publish();
         }}
       >
-        <Card>
-          <CardContent className="flex flex-col gap-3">
-            <EditableImageAttachments
-              images={images}
-              disabled={isSubmitting}
-              onRemove={removeImage}
-            />
-            <Label htmlFor="moment-composer" className="sr-only">
-              发布说说
-            </Label>
-            <Textarea
-              ref={ref}
-              id="moment-composer"
-              value={content}
-              onChange={(event) => handleContentChange(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  void publish();
-                }
-              }}
-              className="min-h-32 resize-none text-base leading-6 md:text-base"
-              disabled={isSubmitting}
-            />
-          </CardContent>
-          <CardFooter className="justify-between gap-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="sr-only"
-              tabIndex={-1}
-              onChange={addImages}
-            />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="添加图片"
-                    disabled={isSubmitting}
-                    onClick={() => fileInputRef.current?.click()}
-                  />
-                }
-              >
-                <ImagePlusIcon />
-              </TooltipTrigger>
-              <TooltipContent>添加图片</TooltipContent>
-            </Tooltip>
+        <EditableImageAttachments
+          images={images}
+          disabled={isSubmitting}
+          onRemove={removeImage}
+        />
+        <Label htmlFor="moment-composer" className="sr-only">
+          发布说说
+        </Label>
+        <Textarea
+          ref={ref}
+          id="moment-composer"
+          value={content}
+          onChange={(event) => handleContentChange(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+              event.preventDefault();
+              void publish();
+            }
+          }}
+          className="min-h-32 resize-none text-base leading-6 md:text-base"
+          disabled={isSubmitting}
+        />
 
-            <div className="flex items-center gap-3">
-              {draftSaved ? (
-                <span className="text-sm text-muted-foreground opacity-70">
-                  已自动保存
-                </span>
+        <div className="flex items-center justify-between gap-4">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="sr-only"
+            tabIndex={-1}
+            onChange={addImages}
+          />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="添加图片"
+                  disabled={isSubmitting}
+                  onClick={() => fileInputRef.current?.click()}
+                />
+              }
+            >
+              <ImagePlusIcon />
+            </TooltipTrigger>
+            <TooltipContent>添加图片</TooltipContent>
+          </Tooltip>
+
+          <div className="flex items-center gap-3">
+            {draftSaved ? (
+              <span className="text-sm text-muted-foreground opacity-70">
+                已自动保存
+              </span>
+            ) : null}
+            <Button type="submit" disabled={!canPublish || isSubmitting}>
+              {isSubmitting ? <Spinner data-icon="inline-start" /> : null}
+              {isSubmitting ? "发布中" : "发布"}
+              {!isSubmitting ? (
+                <CornerDownLeftIcon data-icon="inline-end" />
               ) : null}
-              <Button type="submit" disabled={!canPublish || isSubmitting}>
-                {isSubmitting ? <Spinner data-icon="inline-start" /> : null}
-                {isSubmitting ? "发布中" : "发布"}
-                {!isSubmitting ? (
-                  <CornerDownLeftIcon data-icon="inline-end" />
-                ) : null}
-              </Button>
-            </div>
-          </CardFooter>
-        </Card>
+            </Button>
+          </div>
+        </div>
       </form>
     );
   },
