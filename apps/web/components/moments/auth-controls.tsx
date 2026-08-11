@@ -1,13 +1,14 @@
 "use client";
 
+import { SignInButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import {
-  Show,
-  SignInButton,
-  UserButton,
-  useAuth,
-  useUser,
-} from "@clerk/nextjs";
-import { useEffect, useState } from "react";
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { LogInIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,11 +17,21 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TransitionPresence } from "@/components/ui/transition-presence";
 import { cn } from "@/lib/utils";
 
 import { getAuthStatus } from "./api";
 
+interface AdminAccess {
+  isAdmin: boolean;
+  isCheckingAdmin: boolean;
+  getToken: () => Promise<string | null>;
+}
+
+const AdminAccessContext = createContext<AdminAccess | null>(null);
+
 export function AuthControls({ compact = false }: { compact?: boolean }) {
+  const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const userName =
     user?.fullName ??
@@ -31,11 +42,15 @@ export function AuthControls({ compact = false }: { compact?: boolean }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-center",
+        "grid items-center justify-center",
         compact ? "size-11" : "min-h-8",
       )}
     >
-      <Show when="signed-out">
+      <TransitionPresence
+        show={Boolean(isLoaded && !isSignedIn)}
+        animateOnMount={false}
+        className="col-start-1 row-start-1 flex items-center justify-center"
+      >
         <SignInButton mode="modal">
           <Button
             type="button"
@@ -47,8 +62,12 @@ export function AuthControls({ compact = false }: { compact?: boolean }) {
             {compact ? <LogInIcon /> : "登录"}
           </Button>
         </SignInButton>
-      </Show>
-      <Show when="signed-in">
+      </TransitionPresence>
+      <TransitionPresence
+        show={Boolean(isLoaded && isSignedIn)}
+        animateOnMount={false}
+        className="col-start-1 row-start-1 flex items-center justify-center"
+      >
         {compact ? (
           <Tooltip>
             <TooltipTrigger
@@ -73,12 +92,12 @@ export function AuthControls({ compact = false }: { compact?: boolean }) {
         ) : (
           <UserButton />
         )}
-      </Show>
+      </TransitionPresence>
     </div>
   );
 }
 
-export function useAdminAccess() {
+export function AdminAccessProvider({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn, userId, getToken } = useAuth();
   const [checkedAccess, setCheckedAccess] = useState<{
     userId: string;
@@ -111,9 +130,28 @@ export function useAdminAccess() {
   }, [getToken, isLoaded, isSignedIn, userId]);
 
   const hasCurrentResult = Boolean(userId && checkedAccess?.userId === userId);
-  return {
-    isAdmin: Boolean(isSignedIn && hasCurrentResult && checkedAccess?.isAdmin),
-    isCheckingAdmin: !isLoaded || Boolean(isSignedIn && !hasCurrentResult),
-    getToken,
-  };
+  const value = useMemo(
+    () => ({
+      isAdmin: Boolean(
+        isSignedIn && hasCurrentResult && checkedAccess?.isAdmin,
+      ),
+      isCheckingAdmin: !isLoaded || Boolean(isSignedIn && !hasCurrentResult),
+      getToken,
+    }),
+    [checkedAccess?.isAdmin, getToken, hasCurrentResult, isLoaded, isSignedIn],
+  );
+
+  return (
+    <AdminAccessContext.Provider value={value}>
+      {children}
+    </AdminAccessContext.Provider>
+  );
+}
+
+export function useAdminAccess() {
+  const access = useContext(AdminAccessContext);
+  if (!access) {
+    throw new Error("useAdminAccess 必须在 AdminAccessProvider 中使用。");
+  }
+  return access;
 }

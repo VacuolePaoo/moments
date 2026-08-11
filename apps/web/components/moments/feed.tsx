@@ -83,6 +83,7 @@ export function Feed({
                     post={post}
                     isAdmin={isAdmin}
                     getToken={getToken}
+                    showTime={group.items.length > 1}
                     showEdited={showEdited}
                     eagerImages={groupIndex === 0 && index === 0}
                     onUpdated={onUpdated}

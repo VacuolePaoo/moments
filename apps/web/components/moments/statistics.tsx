@@ -18,9 +18,7 @@ import {
 } from "@/components/ui/tooltip";
 
 import { getMomentStatistics, retryRead, type MomentStatistics } from "./api";
-import { useAdminAccess } from "./auth-controls";
 import { MomentsShell } from "./moments-shell";
-import { MomentsToolbar } from "./moments-toolbar";
 import { PageTitle } from "./page-title";
 
 const heatmapLabels = {
@@ -68,7 +66,6 @@ function activityForYear(
 }
 
 export function MomentsStatistics() {
-  const { isAdmin } = useAdminAccess();
   const [statistics, setStatistics] = useState<MomentStatistics | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,7 +102,7 @@ export function MomentsStatistics() {
   const activeYear = selectedYear ?? years[0] ?? null;
 
   return (
-    <MomentsShell toolbar={<MomentsToolbar isAdmin={isAdmin} />}>
+    <MomentsShell>
       <PageTitle>统计信息</PageTitle>
 
       {isLoading ? <StatisticsSkeleton /> : null}

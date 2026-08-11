@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
+import { TransitionPresence } from "@/components/ui/transition-presence";
 
 import {
   listDeletedPosts,
@@ -29,7 +30,6 @@ import { useAdminAccess } from "./auth-controls";
 import { FeedSkeleton } from "./feed";
 import { MomentImages } from "./image-attachments";
 import { MomentsShell } from "./moments-shell";
-import { MomentsToolbar } from "./moments-toolbar";
 import { PageTitle } from "./page-title";
 import { TextContent } from "./text-content";
 
@@ -139,18 +139,22 @@ export function MomentsTrash() {
   }
 
   return (
-    <MomentsShell toolbar={<MomentsToolbar isAdmin={isAdmin} />}>
+    <MomentsShell>
       <PageTitle>回收站</PageTitle>
 
-      {isCheckingAdmin || (isAdmin && isLoading) ? <FeedSkeleton /> : null}
+      <TransitionPresence show={isCheckingAdmin || (isAdmin && isLoading)}>
+        <FeedSkeleton />
+      </TransitionPresence>
 
-      {!isCheckingAdmin && !isAdmin ? (
+      <TransitionPresence show={!isCheckingAdmin && !isAdmin}>
         <p className="text-base leading-6 text-muted-foreground">
           请使用管理员账号登录
         </p>
-      ) : null}
+      </TransitionPresence>
 
-      {isAdmin && !isLoading && error && posts.length === 0 ? (
+      <TransitionPresence
+        show={isAdmin && !isLoading && Boolean(error) && posts.length === 0}
+      >
         <div className="flex items-center gap-3" role="alert">
           <p className="text-base leading-6 text-muted-foreground">{error}</p>
           <Button
@@ -162,15 +166,17 @@ export function MomentsTrash() {
             重试
           </Button>
         </div>
-      ) : null}
+      </TransitionPresence>
 
-      {isAdmin && !isLoading && !error && posts.length === 0 ? (
+      <TransitionPresence
+        show={isAdmin && !isLoading && !error && posts.length === 0}
+      >
         <p className="text-base leading-6 text-muted-foreground">
           回收站是空的
         </p>
-      ) : null}
+      </TransitionPresence>
 
-      {isAdmin && posts.length > 0 ? (
+      <TransitionPresence show={isAdmin && posts.length > 0}>
         <div>
           {posts.map((post, index) => (
             <div key={post.id}>
@@ -200,7 +206,7 @@ export function MomentsTrash() {
           ) : null}
           {isLoadingMore ? <FeedSkeleton className="mt-12" /> : null}
         </div>
-      ) : null}
+      </TransitionPresence>
       <div ref={sentinelRef} className="h-px" aria-hidden="true" />
     </MomentsShell>
   );

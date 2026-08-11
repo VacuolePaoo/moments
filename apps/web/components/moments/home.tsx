@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { toast } from "@/components/ui/toast";
+import { TransitionPresence } from "@/components/ui/transition-presence";
 
 import {
   createPost,
@@ -18,8 +19,26 @@ import { isValidDate, mergePosts } from "./date";
 import { Feed } from "./feed";
 import { FIRST_MOMENT_CONTENT, FirstMomentGuide } from "./first-moment-guide";
 import { MomentsShell } from "./moments-shell";
-import { MomentsToolbar } from "./moments-toolbar";
 import { PageTitle } from "./page-title";
+
+interface CachedHomeFeed {
+  posts: MomentPost[];
+  nextCursor: string | null;
+}
+
+let cachedHomeFeed: CachedHomeFeed | null = null;
+let pendingHomeRequest: ReturnType<typeof listPosts> | null = null;
+
+function loadLatestHomeFeed() {
+  if (!pendingHomeRequest) {
+    pendingHomeRequest = retryRead(() => listPosts({ limit: 20 })).finally(
+      () => {
+        pendingHomeRequest = null;
+      },
+    );
+  }
+  return pendingHomeRequest;
+}
 
 function readHashDate(): string | undefined {
   try {
@@ -32,11 +51,15 @@ function readHashDate(): string | undefined {
 
 export function MomentsHome() {
   const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
-  const [posts, setPosts] = useState<MomentPost[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null | undefined>(
-    undefined,
+  const [posts, setPosts] = useState<MomentPost[]>(
+    () => cachedHomeFeed?.posts ?? [],
   );
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | null | undefined>(
+    () => cachedHomeFeed?.nextCursor,
+  );
+  const [isInitialLoading, setIsInitialLoading] = useState(
+    () => cachedHomeFeed === null,
+  );
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState<string | null>(null);
@@ -50,29 +73,62 @@ export function MomentsHome() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollCompletedFor = useRef<string | null>(null);
+  const contentRevision = useRef(0);
 
   const loadInitial = useCallback(async (anchorDate?: string) => {
+    const revisionAtStart = contentRevision.current;
+    const isBackgroundRefresh = !anchorDate && cachedHomeFeed !== null;
     try {
-      let page = await retryRead(() => listPosts({ limit: 20, anchorDate }));
+      let page = anchorDate
+        ? await retryRead(() => listPosts({ limit: 20, anchorDate }))
+        : await loadLatestHomeFeed();
       if (anchorDate && page.items.length === 0) {
-        page = await retryRead(() => listPosts({ limit: 20 }));
+        page = await loadLatestHomeFeed();
       }
+
+      // A publish/edit/delete completed while the refresh was in flight. Its
+      // local result is newer than this response, so keep it until next refresh.
+      if (contentRevision.current !== revisionAtStart) return;
+
       setPosts(page.items);
       setNextCursor(page.nextCursor);
       setTargetDate(anchorDate ?? null);
       setError(null);
       scrollCompletedFor.current = null;
+      if (!anchorDate) {
+        cachedHomeFeed = {
+          posts: page.items,
+          nextCursor: page.nextCursor,
+        };
+      }
     } catch {
-      setError("内容加载失败，请稍后重试。");
+      if (!isBackgroundRefresh || anchorDate) {
+        setError("内容加载失败，请稍后重试。");
+      }
     } finally {
       setIsInitialLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadInitial(readHashDate()), 0);
-    return () => window.clearTimeout(timer);
+    // Post loading and the root admin check intentionally have no dependency
+    // on each other. A microtask satisfies the effect rule without delaying
+    // the request to a later timer task.
+    let cancelled = false;
+    const anchorDate = readHashDate();
+    queueMicrotask(() => {
+      if (!cancelled) void loadInitial(anchorDate);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loadInitial]);
+
+  useEffect(() => {
+    if (isInitialLoading || targetDate !== null || nextCursor === undefined)
+      return;
+    cachedHomeFeed = { posts, nextCursor };
+  }, [isInitialLoading, nextCursor, posts, targetDate]);
 
   useEffect(() => {
     const scrollKey = targetDate
@@ -131,6 +187,7 @@ export function MomentsHome() {
   }, [error, loadMore, nextCursor]);
 
   function handleCreated(post: MomentPost) {
+    contentRevision.current += 1;
     setPosts((current) => mergePosts(current, [post]));
   }
 
@@ -157,6 +214,7 @@ export function MomentsHome() {
         createPost(FIRST_MOMENT_CONTENT, [], token),
         finishStarterTransition(),
       ]);
+      contentRevision.current += 1;
       setPosts((current) => mergePosts(current, [post]));
       setStarterDismissed(true);
       setComposerInitialContent(undefined);
@@ -175,10 +233,12 @@ export function MomentsHome() {
   }
 
   function handleUpdated(post: MomentPost) {
+    contentRevision.current += 1;
     setPosts((current) => mergePosts(current, [post]));
   }
 
   async function handleDelete(post: MomentPost) {
+    contentRevision.current += 1;
     setPosts((current) => current.filter((item) => item.id !== post.id));
     try {
       const token = await getToken();
@@ -196,6 +256,7 @@ export function MomentsHome() {
                 const restoreToken = await getToken();
                 if (!restoreToken) throw new Error("登录状态已失效。");
                 const restored = await restorePost(post.id, restoreToken);
+                contentRevision.current += 1;
                 setPosts((current) => mergePosts(current, [restored]));
                 toast.close(toastId);
               } catch {
@@ -209,6 +270,7 @@ export function MomentsHome() {
         },
       });
     } catch {
+      contentRevision.current += 1;
       setPosts((current) => mergePosts(current, [post]));
       toast.add({ type: "error", description: "删除失败，请稍后重试。" });
     }
@@ -220,70 +282,76 @@ export function MomentsHome() {
     posts.length === 0 &&
     nextCursor === null;
   const showStarter =
-    hasConfirmedEmpty &&
-    !isCheckingAdmin &&
-    isAdmin &&
-    !starterDismissed;
-  const showVisitorEmpty =
-    hasConfirmedEmpty && !isCheckingAdmin && !isAdmin;
+    hasConfirmedEmpty && !isCheckingAdmin && isAdmin && !starterDismissed;
+  const showVisitorEmpty = hasConfirmedEmpty && !isCheckingAdmin && !isAdmin;
   const showComposer =
     isAdmin && !isInitialLoading && (!hasConfirmedEmpty || starterDismissed);
 
   return (
-    <MomentsShell
-      toolbar={<MomentsToolbar isAdmin={isAdmin} />}
-    >
-      <PageTitle>Moments</PageTitle>
+    <MomentsShell>
+      <div className="mx-auto w-full max-w-[638px]">
+        <PageTitle>Moments</PageTitle>
 
-      {showStarter ? (
-        <FirstMomentGuide
-          isLeaving={starterLeaving}
-          isPublishing={starterPublishing}
-          onEdit={() => void editStarterContent()}
-          onPublish={() => void publishStarterContent()}
-        />
-      ) : (
-        <div className="animate-in fade-in-0 duration-200">
-          {showComposer ? (
-            <div className="mb-12">
-              <Composer
-                ref={composerRef}
+        <div className="grid">
+          <TransitionPresence
+            show={showStarter}
+            className="col-start-1 row-start-1"
+          >
+            <FirstMomentGuide
+              isLeaving={starterLeaving}
+              isPublishing={starterPublishing}
+              onEdit={() => void editStarterContent()}
+              onPublish={() => void publishStarterContent()}
+            />
+          </TransitionPresence>
+
+          <TransitionPresence
+            show={!showStarter}
+            className="col-start-1 row-start-1"
+          >
+            <div>
+              <TransitionPresence show={showComposer} collapse>
+                <div className="mb-12">
+                  <Composer
+                    ref={composerRef}
+                    getToken={getToken}
+                    initialContent={composerInitialContent}
+                    onCreated={handleCreated}
+                  />
+                </div>
+              </TransitionPresence>
+
+              <TransitionPresence show={showVisitorEmpty}>
+                <p className="text-base leading-6 text-muted-foreground">
+                  此实例还没有内容
+                </p>
+              </TransitionPresence>
+
+              <Feed
+                posts={posts}
+                isAdmin={isAdmin}
                 getToken={getToken}
-                initialContent={composerInitialContent}
-                onCreated={handleCreated}
+                highlightDate={highlightDate}
+                isInitialLoading={isInitialLoading}
+                isLoadingMore={isLoadingMore}
+                showEmptyMessage={false}
+                error={error}
+                onRetry={() => {
+                  if (posts.length === 0) {
+                    setIsInitialLoading(true);
+                    void loadInitial(readHashDate());
+                  } else {
+                    void loadMore();
+                  }
+                }}
+                onUpdated={handleUpdated}
+                onDelete={(post) => void handleDelete(post)}
               />
             </div>
-          ) : null}
-
-          {showVisitorEmpty ? (
-            <p className="text-base leading-6 text-muted-foreground">
-              此实例还没有内容
-            </p>
-          ) : null}
-
-          <Feed
-            posts={posts}
-            isAdmin={isAdmin}
-            getToken={getToken}
-            highlightDate={highlightDate}
-            isInitialLoading={isInitialLoading}
-            isLoadingMore={isLoadingMore}
-            showEmptyMessage={false}
-            error={error}
-            onRetry={() => {
-              if (posts.length === 0) {
-                setIsInitialLoading(true);
-                void loadInitial(readHashDate());
-              } else {
-                void loadMore();
-              }
-            }}
-            onUpdated={handleUpdated}
-            onDelete={(post) => void handleDelete(post)}
-          />
+          </TransitionPresence>
         </div>
-      )}
-      <div ref={sentinelRef} className="h-px" aria-hidden="true" />
+        <div ref={sentinelRef} className="h-px" aria-hidden="true" />
+      </div>
     </MomentsShell>
   );
 }

@@ -4,6 +4,8 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { zhCN } from "@clerk/localizations";
 import "./globals.css";
 
+import { AdminAccessProvider } from "@/components/moments/auth-controls";
+import { MomentsToolbar } from "@/components/moments/moments-toolbar";
 import { SystemThemeListener } from "@/components/moments/system-theme";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -37,9 +39,14 @@ export default function RootLayout({
       </head>
       <body className="min-h-full bg-background text-base leading-6 text-foreground">
         <ClerkProvider localization={zhCN}>
-          <SystemThemeListener />
-          <TooltipProvider>{children}</TooltipProvider>
-          <Toaster />
+          <AdminAccessProvider>
+            <SystemThemeListener />
+            <TooltipProvider>
+              {children}
+              <MomentsToolbar />
+            </TooltipProvider>
+            <Toaster />
+          </AdminAccessProvider>
         </ClerkProvider>
       </body>
     </html>

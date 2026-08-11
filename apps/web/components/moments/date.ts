@@ -11,6 +11,12 @@ const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
   weekday: "long",
 });
+const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Shanghai",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 export function isValidDate(value: string): boolean {
   if (!DATE_PATTERN.test(value)) return false;
@@ -35,6 +41,10 @@ export function formatDateHeading(date: string): string {
   const [year, month, day] = date.split("-");
   const weekday = weekdayFormatter.format(new Date(`${date}T12:00:00+08:00`));
   return `${year}年${Number(month)}月${Number(day)}日 ${weekday}`;
+}
+
+export function formatPostTime(isoTimestamp: string): string {
+  return timeFormatter.format(new Date(isoTimestamp));
 }
 
 export function sortPosts(posts: MomentPost[]): MomentPost[] {

@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { TransitionPresence } from "@/components/ui/transition-presence";
 import {
   Tooltip,
   TooltipContent,
@@ -37,6 +38,7 @@ import {
 } from "@/components/ui/tooltip";
 
 import { updatePost, type MomentPost } from "./api";
+import { formatPostTime } from "./date";
 import { editDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
   EditableImageAttachments,
@@ -53,6 +55,7 @@ interface MomentItemProps {
   post: MomentPost;
   isAdmin: boolean;
   getToken: () => Promise<string | null>;
+  showTime?: boolean;
   showEdited?: boolean;
   eagerImages?: boolean;
   onUpdated: (post: MomentPost) => void;
@@ -70,6 +73,7 @@ export function MomentItem({
   post,
   isAdmin,
   getToken,
+  showTime = false,
   showEdited = false,
   eagerImages = false,
   onUpdated,
@@ -224,8 +228,20 @@ export function MomentItem({
 
   return (
     <article className="group/moment relative min-w-0">
-      {isAdmin && !isEditing ? (
-        <div className="absolute -top-1 right-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100">
+      <TransitionPresence show={showTime} animateOnMount={false} collapse>
+        <time
+          dateTime={post.createdAt}
+          className="mb-2 block text-base leading-[1.6] text-muted-foreground"
+        >
+          {formatPostTime(post.createdAt)}
+        </time>
+      </TransitionPresence>
+
+      <TransitionPresence
+        show={isAdmin && !isEditing}
+        className="absolute -top-1 right-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100"
+      >
+        <div>
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger
@@ -263,7 +279,7 @@ export function MomentItem({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      ) : null}
+      </TransitionPresence>
 
       {isEditing ? (
         <form
@@ -339,7 +355,11 @@ export function MomentItem({
           </div>
         </form>
       ) : (
-        <div className={isAdmin ? "pr-10" : undefined}>
+        <div
+          className={`transition-[padding] duration-200 ease-out ${
+            isAdmin ? "pr-10" : "pr-0"
+          }`}
+        >
           <div className="flex flex-col gap-4">
             <MomentImages images={post.images} eager={eagerImages} />
             {post.content ? <TextContent content={post.content} /> : null}

@@ -29,7 +29,6 @@ import { formatDateHeading, mergePosts } from "./date";
 import { FeedSkeleton } from "./feed";
 import { MomentItem } from "./moment-item";
 import { MomentsShell } from "./moments-shell";
-import { MomentsToolbar } from "./moments-toolbar";
 
 export function MomentDateDetail({ date }: { date: string }) {
   const router = useRouter();
@@ -133,7 +132,7 @@ export function MomentDateDetail({ date }: { date: string }) {
   }
 
   return (
-    <MomentsShell toolbar={<MomentsToolbar isAdmin={isAdmin} />}>
+    <MomentsShell>
       {isLoading ? <FeedSkeleton /> : null}
 
       {!isLoading && error ? (
@@ -187,6 +186,7 @@ export function MomentDateDetail({ date }: { date: string }) {
                   post={post}
                   isAdmin={isAdmin}
                   getToken={getToken}
+                  showTime={detail.items.length > 1}
                   showEdited
                   eagerImages={index === 0}
                   onUpdated={handleUpdated}
