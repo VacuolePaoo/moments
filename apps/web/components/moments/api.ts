@@ -30,6 +30,17 @@ export interface DateDetail {
   };
 }
 
+export interface MomentStatistics {
+  days: Array<{ date: string; count: number }>;
+  summary: {
+    firstDate: string | null;
+    totalPosts: number;
+    activeDays: number;
+    peakDate: string | null;
+    peakPosts: number;
+  };
+}
+
 export interface AuthStatus {
   authenticated: true;
   isAdmin: boolean;
@@ -152,6 +163,16 @@ export function getDateDetail(
   return request<DateDetail>(`/api/v1/dates/${encodeURIComponent(date)}`, {
     signal,
   });
+}
+
+export function getMomentStatistics(
+  signal?: AbortSignal,
+): Promise<MomentStatistics> {
+  return request<MomentStatistics>("/api/v1/statistics", { signal });
+}
+
+export function getRandomMomentDate(signal?: AbortSignal): Promise<DateDetail> {
+  return request<DateDetail>("/api/v1/random", { signal });
 }
 
 export function getAuthStatus(

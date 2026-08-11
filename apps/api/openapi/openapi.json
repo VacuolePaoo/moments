@@ -176,6 +176,82 @@
           "edited"
         ]
       },
+      "MomentStatistics": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyMomentCount"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "firstDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+                "example": "2026-08-07"
+              },
+              "totalPosts": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "activeDays": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "peakDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+                "example": "2026-08-07"
+              },
+              "peakPosts": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "firstDate",
+              "totalPosts",
+              "activeDays",
+              "peakDate",
+              "peakPosts"
+            ]
+          }
+        },
+        "required": [
+          "days",
+          "summary"
+        ]
+      },
+      "DailyMomentCount": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+            "example": "2026-08-07"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "date",
+          "count"
+        ]
+      },
       "DateDetail": {
         "type": "object",
         "properties": {
@@ -535,6 +611,78 @@
           },
           "503": {
             "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/statistics": {
+      "get": {
+        "operationId": "getMomentStatistics",
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Get daily post counts and lifetime statistics",
+        "responses": {
+          "200": {
+            "description": "Daily counts and summary statistics in Asia/Shanghai.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MomentStatistics"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/random": {
+      "get": {
+        "operationId": "getRandomMomentDate",
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Pick a random post and return every post from its date",
+        "responses": {
+          "200": {
+            "description": "The randomly selected Asia/Shanghai date and its posts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DateDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There are no posts to pick.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
             "content": {
               "application/json": {
                 "schema": {

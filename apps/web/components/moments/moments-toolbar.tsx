@@ -1,11 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { ComponentType, SVGProps } from "react";
+import { useState, type ComponentType, type SVGProps } from "react";
 import {
   CalendarDaysIcon,
   DicesIcon,
-  PlusIcon,
+  HouseIcon,
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 
 import { AuthControls } from "./auth-controls";
+import { RandomMomentDialog } from "./random-moment-dialog";
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -57,38 +58,53 @@ function ToolbarButton({
   );
 }
 
-export function MomentsToolbar({
-  isAdmin,
-  onPublish,
-}: {
-  isAdmin: boolean;
-  onPublish?: () => void;
-}) {
+export function MomentsToolbar({ isAdmin }: { isAdmin: boolean }) {
   const router = useRouter();
-  const publish = isAdmin ? (onPublish ?? (() => router.push("/"))) : undefined;
-  const openTrash = isAdmin ? () => router.push("/trash") : undefined;
+  const [randomOpen, setRandomOpen] = useState(false);
+  const openHome = () => router.push("/");
+  const openStatistics = () => router.push("/statistics");
+  const openTrash = () => router.push("/trash");
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4 md:top-auto md:bottom-6">
-      <nav
-        aria-label="主要操作"
-        className="pointer-events-auto flex items-center gap-3"
-      >
-        <ButtonGroup
-          aria-label="Moments 工具"
-          className="[--radius:9999rem] rounded-full border bg-background p-1 shadow-sm"
+    <>
+      <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4 md:top-auto md:bottom-6">
+        <nav
+          aria-label="主要操作"
+          className="pointer-events-auto flex items-center gap-3"
         >
-          <ToolbarButton label="发布" icon={PlusIcon} onClick={publish} />
-          <ToolbarButton label="日历" icon={CalendarDaysIcon} reserved />
-          <ToolbarButton label="随机" icon={DicesIcon} reserved />
-          <ToolbarButton label="回收站" icon={Trash2Icon} onClick={openTrash} />
-          <ToolbarButton label="设置" icon={SettingsIcon} reserved />
-        </ButtonGroup>
+          <ButtonGroup
+            aria-label="Moments 工具"
+            className="[--radius:9999rem] rounded-full border bg-background p-1 shadow-sm"
+          >
+            <ToolbarButton label="首页" icon={HouseIcon} onClick={openHome} />
+            <ToolbarButton
+              label="统计信息"
+              icon={CalendarDaysIcon}
+              onClick={openStatistics}
+            />
+            <ToolbarButton
+              label="随机"
+              icon={DicesIcon}
+              onClick={() => setRandomOpen(true)}
+            />
+            {isAdmin ? (
+              <>
+                <ToolbarButton
+                  label="回收站"
+                  icon={Trash2Icon}
+                  onClick={openTrash}
+                />
+                <ToolbarButton label="设置" icon={SettingsIcon} reserved />
+              </>
+            ) : null}
+          </ButtonGroup>
 
-        <div className="flex size-11 items-center justify-center overflow-hidden rounded-full border bg-background shadow-sm">
-          <AuthControls compact />
-        </div>
-      </nav>
-    </div>
+          <div className="flex size-11 items-center justify-center overflow-hidden rounded-full border bg-background shadow-sm">
+            <AuthControls compact />
+          </div>
+        </nav>
+      </div>
+      <RandomMomentDialog open={randomOpen} onOpenChange={setRandomOpen} />
+    </>
   );
 }

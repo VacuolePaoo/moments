@@ -5,6 +5,7 @@ import type {
   DateDetail,
   DeletedPost,
   DeletedPostList,
+  MomentStatistics,
   Post,
   PostList,
 } from "../schemas";
@@ -27,6 +28,13 @@ interface IdRow {
 
 interface CreatedAtRow {
   created_at: string;
+}
+
+interface IdCreatedAtRow extends IdRow, CreatedAtRow {}
+
+interface DailyMomentCountRow {
+  date: string;
+  count: number;
 }
 
 function parseImages(value: string): string[] {
@@ -230,6 +238,78 @@ export async function getDateDetail(
       olderDate: older === undefined ? null : toShanghaiDate(older.created_at),
     },
   };
+}
+
+export async function getMomentStatistics(
+  db: D1Database,
+): Promise<MomentStatistics> {
+  const result = await db
+    .prepare(
+      `SELECT date(created_at, '+8 hours') AS date, COUNT(*) AS count
+       FROM posts
+       WHERE deleted_at IS NULL
+       GROUP BY date(created_at, '+8 hours')
+       ORDER BY date ASC`,
+    )
+    .all<DailyMomentCountRow>();
+
+  const days = result.results.map((row) => ({
+    date: row.date,
+    count: row.count,
+  }));
+
+  let totalPosts = 0;
+  let peakDate: string | null = null;
+  let peakPosts = 0;
+  for (const day of days) {
+    totalPosts += day.count;
+    if (day.count > peakPosts) {
+      peakDate = day.date;
+      peakPosts = day.count;
+    }
+  }
+
+  return {
+    days,
+    summary: {
+      firstDate: days[0]?.date ?? null,
+      totalPosts,
+      activeDays: days.length,
+      peakDate,
+      peakPosts,
+    },
+  };
+}
+
+function getRandomIndex(length: number): number {
+  const range = 0x1_0000_0000;
+  const upperBound = range - (range % length);
+  const sample = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(sample);
+  } while ((sample[0] ?? range) >= upperBound);
+  return (sample[0] ?? 0) % length;
+}
+
+export async function getRandomDateDetail(db: D1Database): Promise<DateDetail> {
+  const result = await db
+    .prepare(
+      `SELECT id, created_at
+       FROM posts
+       WHERE deleted_at IS NULL
+       ORDER BY id ASC`,
+    )
+    .all<IdCreatedAtRow>();
+
+  if (result.results.length === 0) {
+    throw new ApiError(404, "POST_NOT_FOUND", "There are no posts to pick.");
+  }
+
+  const selected = result.results[getRandomIndex(result.results.length)];
+  if (selected === undefined) {
+    throw new Error("Failed to select a random post.");
+  }
+  return getDateDetail(db, toShanghaiDate(selected.created_at));
 }
 
 export async function getPost(db: D1Database, id: string): Promise<Post> {

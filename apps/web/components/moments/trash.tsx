@@ -14,7 +14,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
@@ -31,6 +30,7 @@ import { FeedSkeleton } from "./feed";
 import { MomentImages } from "./image-attachments";
 import { MomentsShell } from "./moments-shell";
 import { MomentsToolbar } from "./moments-toolbar";
+import { PageTitle } from "./page-title";
 import { TextContent } from "./text-content";
 
 const deletedAtFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -140,23 +140,19 @@ export function MomentsTrash() {
 
   return (
     <MomentsShell toolbar={<MomentsToolbar isAdmin={isAdmin} />}>
-      <h2 className="mb-12 text-[1.602rem] leading-[1.5] font-semibold">
-        回收站
-      </h2>
+      <PageTitle>回收站</PageTitle>
 
       {isCheckingAdmin || (isAdmin && isLoading) ? <FeedSkeleton /> : null}
 
       {!isCheckingAdmin && !isAdmin ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>请使用管理员账号登录</EmptyTitle>
-          </EmptyHeader>
-        </Empty>
+        <p className="text-base leading-6 text-muted-foreground">
+          请使用管理员账号登录
+        </p>
       ) : null}
 
       {isAdmin && !isLoading && error && posts.length === 0 ? (
         <div className="flex items-center gap-3" role="alert">
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-base leading-6 text-muted-foreground">{error}</p>
           <Button
             type="button"
             variant="outline"
@@ -169,11 +165,9 @@ export function MomentsTrash() {
       ) : null}
 
       {isAdmin && !isLoading && !error && posts.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>回收站是空的</EmptyTitle>
-          </EmptyHeader>
-        </Empty>
+        <p className="text-base leading-6 text-muted-foreground">
+          回收站是空的
+        </p>
       ) : null}
 
       {isAdmin && posts.length > 0 ? (
@@ -191,7 +185,9 @@ export function MomentsTrash() {
           ))}
           {error ? (
             <div className="mt-12 flex items-center gap-3" role="alert">
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base leading-6 text-muted-foreground">
+                {error}
+              </p>
               <Button
                 type="button"
                 variant="outline"

@@ -12,6 +12,8 @@ import {
   getDeletedPost,
   getPost,
   getPostNavigation,
+  getMomentStatistics,
+  getRandomDateDetail,
   listDeletedPosts,
   listPosts,
   permanentlyDeletePost,
@@ -29,6 +31,7 @@ import {
   DeletedPostListSchema,
   ErrorSchema,
   HealthSchema,
+  MomentStatisticsSchema,
   PostDetailSchema,
   PostIdSchema,
   PostListSchema,
@@ -151,6 +154,37 @@ const getDateRoute = createRoute({
     },
     404: errorResponseDefinition("The requested date has no posts."),
     422: errorResponseDefinition("Invalid calendar date."),
+    500: errorResponseDefinition("Unexpected server error."),
+  },
+});
+
+const getStatisticsRoute = createRoute({
+  method: "get",
+  path: "/api/v1/statistics",
+  operationId: "getMomentStatistics",
+  tags: ["Statistics"],
+  summary: "Get daily post counts and lifetime statistics",
+  responses: {
+    200: {
+      description: "Daily counts and summary statistics in Asia/Shanghai.",
+      content: jsonContent(MomentStatisticsSchema),
+    },
+    500: errorResponseDefinition("Unexpected server error."),
+  },
+});
+
+const getRandomDateRoute = createRoute({
+  method: "get",
+  path: "/api/v1/random",
+  operationId: "getRandomMomentDate",
+  tags: ["Posts"],
+  summary: "Pick a random post and return every post from its date",
+  responses: {
+    200: {
+      description: "The randomly selected Asia/Shanghai date and its posts.",
+      content: jsonContent(DateDetailSchema),
+    },
+    404: errorResponseDefinition("There are no posts to pick."),
     500: errorResponseDefinition("Unexpected server error."),
   },
 });
@@ -412,6 +446,14 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       throw error;
     }
+  });
+
+  app.openapi(getStatisticsRoute, async (c) => {
+    return c.json(await getMomentStatistics(c.env.DB), 200);
+  });
+
+  app.openapi(getRandomDateRoute, async (c) => {
+    return c.json(await getRandomDateDetail(c.env.DB), 200);
   });
 
   app.openapi(getDateRoute, async (c) => {

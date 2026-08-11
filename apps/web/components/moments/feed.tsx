@@ -18,6 +18,7 @@ interface FeedProps {
   highlightDate?: string | null;
   isInitialLoading?: boolean;
   isLoadingMore?: boolean;
+  showEmptyMessage?: boolean;
   error?: string | null;
   onRetry?: () => void;
   onUpdated: (post: MomentPost) => void;
@@ -32,6 +33,7 @@ export function Feed({
   highlightDate,
   isInitialLoading = false,
   isLoadingMore = false,
+  showEmptyMessage = true,
   error,
   onRetry,
   onUpdated,
@@ -44,7 +46,9 @@ export function Feed({
   }
 
   if (posts.length === 0) {
-    return <p className="text-muted-foreground">还没有内容</p>;
+    return showEmptyMessage ? (
+      <p className="text-base leading-6 text-muted-foreground">还没有内容</p>
+    ) : null;
   }
 
   const groups = groupPostsByDate(posts);
@@ -120,7 +124,7 @@ function FeedError({
 }) {
   return (
     <div className={`flex items-center gap-3 ${className}`} role="alert">
-      <p className="text-sm text-muted-foreground">{message}</p>
+      <p className="text-base leading-6 text-muted-foreground">{message}</p>
       {onRetry ? (
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>
           重试

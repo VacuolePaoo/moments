@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "@/components/ui/toast";
 
 import {
+  createPost,
   deletePost,
   listPosts,
   restorePost,
@@ -15,8 +16,10 @@ import { useAdminAccess } from "./auth-controls";
 import { Composer } from "./composer";
 import { isValidDate, mergePosts } from "./date";
 import { Feed } from "./feed";
+import { FIRST_MOMENT_CONTENT, FirstMomentGuide } from "./first-moment-guide";
 import { MomentsShell } from "./moments-shell";
 import { MomentsToolbar } from "./moments-toolbar";
+import { PageTitle } from "./page-title";
 
 function readHashDate(): string | undefined {
   try {
@@ -28,7 +31,7 @@ function readHashDate(): string | undefined {
 }
 
 export function MomentsHome() {
-  const { isAdmin, getToken } = useAdminAccess();
+  const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
   const [posts, setPosts] = useState<MomentPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(
     undefined,
@@ -38,6 +41,12 @@ export function MomentsHome() {
   const [error, setError] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState<string | null>(null);
   const [highlightDate, setHighlightDate] = useState<string | null>(null);
+  const [starterDismissed, setStarterDismissed] = useState(false);
+  const [starterLeaving, setStarterLeaving] = useState(false);
+  const [starterPublishing, setStarterPublishing] = useState(false);
+  const [composerInitialContent, setComposerInitialContent] = useState<
+    string | undefined
+  >();
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollCompletedFor = useRef<string | null>(null);
@@ -125,6 +134,46 @@ export function MomentsHome() {
     setPosts((current) => mergePosts(current, [post]));
   }
 
+  function finishStarterTransition() {
+    return new Promise<void>((resolve) => window.setTimeout(resolve, 180));
+  }
+
+  async function editStarterContent() {
+    setStarterLeaving(true);
+    await finishStarterTransition();
+    setComposerInitialContent(FIRST_MOMENT_CONTENT);
+    setStarterDismissed(true);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }
+
+  async function publishStarterContent() {
+    if (starterPublishing) return;
+    setStarterPublishing(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("登录状态已失效。");
+      setStarterLeaving(true);
+      const [post] = await Promise.all([
+        createPost(FIRST_MOMENT_CONTENT, [], token),
+        finishStarterTransition(),
+      ]);
+      setPosts((current) => mergePosts(current, [post]));
+      setStarterDismissed(true);
+      setComposerInitialContent(undefined);
+    } catch (publishError) {
+      setStarterLeaving(false);
+      toast.add({
+        type: "error",
+        description:
+          publishError instanceof Error
+            ? publishError.message
+            : "发布失败，请稍后重试。",
+      });
+    } finally {
+      setStarterPublishing(false);
+    }
+  }
+
   function handleUpdated(post: MomentPost) {
     setPosts((current) => mergePosts(current, [post]));
   }
@@ -165,44 +214,75 @@ export function MomentsHome() {
     }
   }
 
+  const hasConfirmedEmpty =
+    !isInitialLoading &&
+    error === null &&
+    posts.length === 0 &&
+    nextCursor === null;
+  const showStarter =
+    hasConfirmedEmpty &&
+    !isCheckingAdmin &&
+    isAdmin &&
+    !starterDismissed;
+  const showVisitorEmpty =
+    hasConfirmedEmpty && !isCheckingAdmin && !isAdmin;
+  const showComposer =
+    isAdmin && !isInitialLoading && (!hasConfirmedEmpty || starterDismissed);
+
   return (
     <MomentsShell
-      toolbar={
-        <MomentsToolbar
-          isAdmin={isAdmin}
-          onPublish={() => composerRef.current?.focus()}
-        />
-      }
+      toolbar={<MomentsToolbar isAdmin={isAdmin} />}
     >
-      {isAdmin ? (
-        <div className="mb-12">
-          <Composer
-            ref={composerRef}
+      <PageTitle>Moments</PageTitle>
+
+      {showStarter ? (
+        <FirstMomentGuide
+          isLeaving={starterLeaving}
+          isPublishing={starterPublishing}
+          onEdit={() => void editStarterContent()}
+          onPublish={() => void publishStarterContent()}
+        />
+      ) : (
+        <div className="animate-in fade-in-0 duration-200">
+          {showComposer ? (
+            <div className="mb-12">
+              <Composer
+                ref={composerRef}
+                getToken={getToken}
+                initialContent={composerInitialContent}
+                onCreated={handleCreated}
+              />
+            </div>
+          ) : null}
+
+          {showVisitorEmpty ? (
+            <p className="text-base leading-6 text-muted-foreground">
+              此实例还没有内容
+            </p>
+          ) : null}
+
+          <Feed
+            posts={posts}
+            isAdmin={isAdmin}
             getToken={getToken}
-            onCreated={handleCreated}
+            highlightDate={highlightDate}
+            isInitialLoading={isInitialLoading}
+            isLoadingMore={isLoadingMore}
+            showEmptyMessage={false}
+            error={error}
+            onRetry={() => {
+              if (posts.length === 0) {
+                setIsInitialLoading(true);
+                void loadInitial(readHashDate());
+              } else {
+                void loadMore();
+              }
+            }}
+            onUpdated={handleUpdated}
+            onDelete={(post) => void handleDelete(post)}
           />
         </div>
-      ) : null}
-
-      <Feed
-        posts={posts}
-        isAdmin={isAdmin}
-        getToken={getToken}
-        highlightDate={highlightDate}
-        isInitialLoading={isInitialLoading}
-        isLoadingMore={isLoadingMore}
-        error={error}
-        onRetry={() => {
-          if (posts.length === 0) {
-            setIsInitialLoading(true);
-            void loadInitial(readHashDate());
-          } else {
-            void loadMore();
-          }
-        }}
-        onUpdated={handleUpdated}
-        onDelete={(post) => void handleDelete(post)}
-      />
+      )}
       <div ref={sentinelRef} className="h-px" aria-hidden="true" />
     </MomentsShell>
   );

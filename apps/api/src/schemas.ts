@@ -79,6 +79,28 @@ export const DateDetailSchema = z
 
 export type DateDetail = z.infer<typeof DateDetailSchema>;
 
+export const DailyMomentCountSchema = z
+  .object({
+    date: ShanghaiDateSchema,
+    count: z.number().int().nonnegative(),
+  })
+  .openapi("DailyMomentCount");
+
+export const MomentStatisticsSchema = z
+  .object({
+    days: z.array(DailyMomentCountSchema),
+    summary: z.object({
+      firstDate: ShanghaiDateSchema.nullable(),
+      totalPosts: z.number().int().nonnegative(),
+      activeDays: z.number().int().nonnegative(),
+      peakDate: ShanghaiDateSchema.nullable(),
+      peakPosts: z.number().int().nonnegative(),
+    }),
+  })
+  .openapi("MomentStatistics");
+
+export type MomentStatistics = z.infer<typeof MomentStatisticsSchema>;
+
 export const WritePostSchema = z
   .strictObject({
     content: z.string().default("").openapi({

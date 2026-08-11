@@ -33,10 +33,11 @@ import {
 interface ComposerProps {
   getToken: () => Promise<string | null>;
   onCreated: (post: MomentPost) => void;
+  initialContent?: string;
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
-  function Composer({ getToken, onCreated }, ref) {
+  function Composer({ getToken, onCreated, initialContent }, ref) {
     const [content, setContent] = useState("");
     const [images, setImages] = useState<EditableImage[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,9 +51,13 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
     }, [images]);
 
     useEffect(() => {
+      if (initialContent) {
+        setContent(initialContent);
+        return;
+      }
       const draft = readDraft(draftKey);
       if (draft?.content) setContent(draft.content);
-    }, [draftKey]);
+    }, [draftKey, initialContent]);
 
     useEffect(() => {
       if (!content) return;

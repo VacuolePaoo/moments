@@ -138,7 +138,7 @@ export function MomentDateDetail({ date }: { date: string }) {
 
       {!isLoading && error ? (
         <div className="flex items-center gap-3" role="alert">
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-base leading-6 text-muted-foreground">{error}</p>
           <Button
             type="button"
             variant="outline"
@@ -155,7 +155,9 @@ export function MomentDateDetail({ date }: { date: string }) {
 
       {!isLoading && notFound ? (
         <div>
-          <p className="text-muted-foreground">当天没有内容</p>
+          <p className="text-base leading-6 text-muted-foreground">
+            当天没有内容
+          </p>
           <Link
             href={`/#${date}`}
             className={buttonVariants({

@@ -50,6 +50,8 @@ describe("Moments API", () => {
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}/restore");
     expect(document.paths).toHaveProperty("/api/v1/dates/{date}");
+    expect(document.paths).toHaveProperty("/api/v1/statistics");
+    expect(document.paths).toHaveProperty("/api/v1/random");
     expect(document.paths).toHaveProperty("/api/v1/trash");
     expect(document.paths).toHaveProperty("/api/v1/trash/{id}");
   });
@@ -311,6 +313,103 @@ describe("Moments API", () => {
     expect(
       (await app.request("/api/v1/dates/2026-08-09", {}, env)).status,
     ).toBe(404);
+  });
+
+  it("returns daily statistics in Asia/Shanghai and excludes deleted posts", async () => {
+    const rows = [
+      [
+        "66666666-6666-4666-8666-666666666661",
+        "第一天",
+        "2026-08-06T15:59:59.999Z",
+        null,
+      ],
+      [
+        "66666666-6666-4666-8666-666666666662",
+        "第二天一",
+        "2026-08-06T16:00:00.000Z",
+        null,
+      ],
+      [
+        "66666666-6666-4666-8666-666666666663",
+        "第二天二",
+        "2026-08-07T15:59:59.999Z",
+        null,
+      ],
+      [
+        "66666666-6666-4666-8666-666666666664",
+        "已删除",
+        "2026-08-07T16:00:00.000Z",
+        "2026-08-08T00:00:00.000Z",
+      ],
+    ] as const;
+    await env.DB.batch(
+      rows.map(([id, content, createdAt, deletedAt]) =>
+        env.DB.prepare(
+          `INSERT INTO posts (id, content, images_json, created_at, updated_at, deleted_at)
+           VALUES (?, ?, '[]', ?, ?, ?)`,
+        ).bind(id, content, createdAt, createdAt, deletedAt),
+      ),
+    );
+
+    const response = await createApp().request("/api/v1/statistics", {}, env);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      days: [
+        { date: "2026-08-06", count: 1 },
+        { date: "2026-08-07", count: 2 },
+      ],
+      summary: {
+        firstDate: "2026-08-06",
+        totalPosts: 3,
+        activeDays: 2,
+        peakDate: "2026-08-07",
+        peakPosts: 2,
+      },
+    });
+  });
+
+  it("returns all posts from the date selected by the random endpoint", async () => {
+    const rows = [
+      [
+        "77777777-7777-4777-8777-777777777771",
+        "第一天",
+        "2026-08-06T15:59:59.999Z",
+      ],
+      [
+        "77777777-7777-4777-8777-777777777772",
+        "第二天一",
+        "2026-08-06T16:00:00.000Z",
+      ],
+      [
+        "77777777-7777-4777-8777-777777777773",
+        "第二天二",
+        "2026-08-07T00:00:00.000Z",
+      ],
+    ] as const;
+    await env.DB.batch(
+      rows.map(([id, content, createdAt]) =>
+        env.DB.prepare(
+          `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+           VALUES (?, ?, '[]', ?, ?)`,
+        ).bind(id, content, createdAt, createdAt),
+      ),
+    );
+
+    const response = await createApp().request("/api/v1/random", {}, env);
+    expect(response.status).toBe(200);
+    const detail = await response.json<{
+      date: string;
+      items: Array<{ id: string }>;
+    }>();
+    expect(["2026-08-06", "2026-08-07"]).toContain(detail.date);
+    expect(detail.items.map((item) => item.id)).toEqual(
+      detail.date === "2026-08-06" ? [rows[0][0]] : [rows[2][0], rows[1][0]],
+    );
+
+    await clearPosts();
+    expect((await createApp().request("/api/v1/random", {}, env)).status).toBe(
+      404,
+    );
   });
 
   it("protects post restoration with Clerk administrator authentication and CORS", async () => {
