@@ -12,6 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import { toast } from "@/components/ui/toast";
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +21,12 @@ import {
 import { TransitionPresence } from "@/components/ui/transition-presence";
 
 import { AuthControls, useAdminAccess } from "./auth-controls";
+import {
+  getRandomMomentDate,
+  MomentsApiError,
+  retryRead,
+  type DateDetail,
+} from "./api";
 import { RandomMomentDialog } from "./random-moment-dialog";
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -29,11 +36,13 @@ function ToolbarButton({
   icon: Icon,
   onClick,
   reserved = false,
+  disabled = false,
 }: {
   label: string;
   icon: ToolbarIcon;
   onClick?: () => void;
   reserved?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <span className="inline-flex">
@@ -47,6 +56,7 @@ function ToolbarButton({
               className="rounded-full"
               aria-label={label}
               aria-disabled={reserved || onClick === undefined}
+              disabled={disabled}
               onClick={onClick}
             />
           }
@@ -63,9 +73,31 @@ export function MomentsToolbar() {
   const router = useRouter();
   const { isAdmin, isCheckingAdmin } = useAdminAccess();
   const [randomOpen, setRandomOpen] = useState(false);
+  const [randomDetail, setRandomDetail] = useState<DateDetail | null>(null);
+  const [isRandomLoading, setIsRandomLoading] = useState(false);
   const openHome = () => router.push("/");
   const openStatistics = () => router.push("/statistics");
   const openTrash = () => router.push("/trash");
+
+  async function loadRandom(openWhenReady: boolean) {
+    if (isRandomLoading) return;
+    setIsRandomLoading(true);
+    try {
+      const detail = await retryRead(() => getRandomMomentDate());
+      setRandomDetail(detail);
+      if (openWhenReady) setRandomOpen(true);
+    } catch (error) {
+      toast.add({
+        type: "error",
+        description:
+          error instanceof MomentsApiError && error.status === 404
+            ? "还没有可随机展示的内容"
+            : "随机内容加载失败，请稍后重试。",
+      });
+    } finally {
+      setIsRandomLoading(false);
+    }
+  }
 
   return (
     <>
@@ -86,9 +118,10 @@ export function MomentsToolbar() {
                 onClick={openStatistics}
               />
               <ToolbarButton
-                label="随机"
+                label={isRandomLoading ? "正在获取随机内容" : "随机"}
                 icon={DicesIcon}
-                onClick={() => setRandomOpen(true)}
+                disabled={isRandomLoading}
+                onClick={() => void loadRandom(true)}
               />
               <div
                 aria-hidden={!isAdmin}
@@ -114,7 +147,15 @@ export function MomentsToolbar() {
           </nav>
         </TransitionPresence>
       </div>
-      <RandomMomentDialog open={randomOpen} onOpenChange={setRandomOpen} />
+      {randomDetail ? (
+        <RandomMomentDialog
+          detail={randomDetail}
+          isRefreshing={isRandomLoading}
+          open={randomOpen}
+          onOpenChange={setRandomOpen}
+          onRequestAnother={() => void loadRandom(false)}
+        />
+      ) : null}
     </>
   );
 }

@@ -33,12 +33,15 @@ function linkify(content: string, paragraphIndex: number) {
 }
 
 export function TextContent({ content }: { content: string }) {
-  const paragraphs = content.split(/\r?\n/u);
+  const paragraphs = content.split(/\r\n|\r|\n/u);
 
   return (
     <div className="flex flex-col gap-[0.4em]">
       {paragraphs.map((paragraph, index) => (
-        <p key={index} className="break-words text-base leading-[1.6]">
+        <p
+          key={index}
+          className="break-words whitespace-pre-wrap text-base leading-[1.6]"
+        >
           {paragraph ? linkify(paragraph, index) : "\u00a0"}
         </p>
       ))}

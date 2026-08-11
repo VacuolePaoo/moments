@@ -225,59 +225,63 @@ export function MomentItem({
   }
 
   const canSave = content.trim().length > 0 || images.length > 0;
+  const showMetaRow = showTime || (isAdmin && !isEditing);
 
   return (
     <article className="group/moment relative min-w-0">
-      <TransitionPresence show={showTime} animateOnMount={false} collapse>
-        <time
-          dateTime={post.createdAt}
-          className="mb-2 block text-base leading-[1.6] text-muted-foreground"
-        >
-          {formatPostTime(post.createdAt)}
-        </time>
-      </TransitionPresence>
+      <TransitionPresence show={showMetaRow} animateOnMount={false} collapse>
+        <div className="mb-2 flex min-h-8 items-center gap-4">
+          <TransitionPresence show={showTime} animateOnMount={false}>
+            <time
+              dateTime={post.createdAt}
+              className="block text-base leading-[1.6] text-muted-foreground"
+            >
+              {formatPostTime(post.createdAt)}
+            </time>
+          </TransitionPresence>
 
-      <TransitionPresence
-        show={isAdmin && !isEditing}
-        className="absolute -top-1 right-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100"
-      >
-        <div>
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="更多操作"
-                      />
-                    }
-                  />
-                }
-              >
-                <EllipsisIcon />
-              </TooltipTrigger>
-              <TooltipContent>更多操作</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuItem onClick={beginEditing}>
-                  <PencilIcon />
-                  编辑
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => onDelete(post)}
+          <TransitionPresence
+            show={isAdmin && !isEditing}
+            animateOnMount={false}
+            className="ml-auto shrink-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100"
+          >
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="更多操作"
+                        />
+                      }
+                    />
+                  }
                 >
-                  <Trash2Icon />
-                  删除
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <EllipsisIcon />
+                </TooltipTrigger>
+                <TooltipContent>更多操作</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={beginEditing}>
+                    <PencilIcon />
+                    编辑
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => onDelete(post)}
+                  >
+                    <Trash2Icon />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </TransitionPresence>
         </div>
       </TransitionPresence>
 
@@ -355,11 +359,7 @@ export function MomentItem({
           </div>
         </form>
       ) : (
-        <div
-          className={`transition-[padding] duration-200 ease-out ${
-            isAdmin ? "pr-10" : "pr-0"
-          }`}
-        >
+        <div>
           <div className="flex flex-col gap-4">
             <MomentImages images={post.images} eager={eagerImages} />
             {post.content ? <TextContent content={post.content} /> : null}

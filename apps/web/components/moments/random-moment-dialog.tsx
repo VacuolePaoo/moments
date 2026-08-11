@@ -1,6 +1,3 @@
-"use client";
-
-import { useCallback, useEffect, useState } from "react";
 import { RefreshCwIcon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,64 +11,28 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 
-import {
-  getRandomMomentDate,
-  MomentsApiError,
-  retryRead,
-  type DateDetail,
-} from "./api";
+import type { DateDetail } from "./api";
 import { formatDateHeading } from "./date";
 import { MomentImages } from "./image-attachments";
 import { TextContent } from "./text-content";
 
 export function RandomMomentDialog({
+  detail,
+  isRefreshing,
   open,
   onOpenChange,
+  onRequestAnother,
 }: {
+  detail: DateDetail;
+  isRefreshing: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRequestAnother: () => void;
 }) {
-  const [detail, setDetail] = useState<DateDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const value = await retryRead(() => getRandomMomentDate());
-      setDetail(value);
-      setError(null);
-    } catch (loadError) {
-      setDetail(null);
-      setError(
-        loadError instanceof MomentsApiError && loadError.status === 404
-          ? "还没有可随机展示的内容"
-          : "随机内容加载失败，请稍后重试。",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!open || detail || isLoading || error) return;
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [detail, error, isLoading, load, open]);
-
-  function changeOpen(nextOpen: boolean) {
-    onOpenChange(nextOpen);
-    if (!nextOpen) {
-      setDetail(null);
-      setError(null);
-      setIsLoading(false);
-    }
-  }
-
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
         className="w-full gap-4 bg-transparent p-0 ring-0 sm:max-w-xl"
@@ -84,44 +45,40 @@ export function RandomMomentDialog({
         <Card>
           <CardHeader>
             <CardTitle className="text-[1.602rem] leading-[1.5] font-semibold">
-              {detail ? formatDateHeading(detail.date) : "随机 Moment"}
+              {formatDateHeading(detail.date)}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? <RandomMomentSkeleton /> : null}
-            {!isLoading && error ? (
-              <p className="text-base leading-6 text-muted-foreground">
-                {error}
-              </p>
-            ) : null}
-            {!isLoading && detail ? (
-              <ScrollArea className="max-h-[min(60vh,32rem)] pr-3">
-                <div>
-                  {detail.items.map((post, index) => (
-                    <div key={post.id}>
-                      {index > 0 ? <Separator className="my-6" /> : null}
-                      <article className="flex min-w-0 flex-col gap-4">
-                        <MomentImages images={post.images} />
-                        {post.content ? (
-                          <TextContent content={post.content} />
-                        ) : null}
-                      </article>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            ) : null}
+            <ScrollArea className="max-h-[min(60vh,32rem)] pr-3">
+              <div>
+                {detail.items.map((post, index) => (
+                  <div key={post.id}>
+                    {index > 0 ? <Separator className="my-6" /> : null}
+                    <article className="flex min-w-0 flex-col gap-4">
+                      <MomentImages images={post.images} />
+                      {post.content ? (
+                        <TextContent content={post.content} />
+                      ) : null}
+                    </article>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
           </CardContent>
         </Card>
 
         <div className="flex items-center justify-center gap-2">
           <Button
             type="button"
-            disabled={isLoading}
-            onClick={() => void load()}
+            disabled={isRefreshing}
+            onClick={onRequestAnother}
           >
-            <RefreshCwIcon data-icon="inline-start" />
-            换一天
+            {isRefreshing ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RefreshCwIcon data-icon="inline-start" />
+            )}
+            {isRefreshing ? "获取中" : "换一天"}
           </Button>
           <DialogClose render={<Button type="button" variant="outline" />}>
             <XIcon data-icon="inline-start" />
@@ -130,15 +87,5 @@ export function RandomMomentDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function RandomMomentSkeleton() {
-  return (
-    <div className="flex flex-col gap-3" aria-label="正在加载随机 Moment">
-      <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-4 w-4/5" />
-      <Skeleton className="h-4 w-2/3" />
-    </div>
   );
 }

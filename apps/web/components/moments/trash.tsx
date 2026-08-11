@@ -33,7 +33,7 @@ import { MomentsShell } from "./moments-shell";
 import { PageTitle } from "./page-title";
 import { TextContent } from "./text-content";
 
-const deletedAtFormatter = new Intl.DateTimeFormat("zh-CN", {
+const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
   year: "numeric",
   month: "long",
@@ -140,57 +140,30 @@ export function MomentsTrash() {
 
   return (
     <MomentsShell>
-      <PageTitle>回收站</PageTitle>
-
-      <TransitionPresence show={isCheckingAdmin || (isAdmin && isLoading)}>
-        <FeedSkeleton />
-      </TransitionPresence>
-
-      <TransitionPresence show={!isCheckingAdmin && !isAdmin}>
-        <p className="text-base leading-6 text-muted-foreground">
-          请使用管理员账号登录
-        </p>
-      </TransitionPresence>
-
-      <TransitionPresence
-        show={isAdmin && !isLoading && Boolean(error) && posts.length === 0}
-      >
-        <div className="flex items-center gap-3" role="alert">
-          <p className="text-base leading-6 text-muted-foreground">{error}</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={loadInitial}
+      <div className="mx-auto w-full max-w-[640px]">
+        <PageTitle>回收站</PageTitle>
+        <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
+          <TransitionPresence
+            show={isCheckingAdmin || (isAdmin && isLoading)}
+            className="!translate-y-0 !scale-100"
           >
-            重试
-          </Button>
-        </div>
-      </TransitionPresence>
+            <FeedSkeleton />
+          </TransitionPresence>
 
-      <TransitionPresence
-        show={isAdmin && !isLoading && !error && posts.length === 0}
-      >
-        <p className="text-base leading-6 text-muted-foreground">
-          回收站是空的
-        </p>
-      </TransitionPresence>
+          <TransitionPresence
+            show={!isCheckingAdmin && !isAdmin}
+            className="!translate-y-0 !scale-100"
+          >
+            <p className="text-base leading-6 text-muted-foreground">
+              请使用管理员账号登录
+            </p>
+          </TransitionPresence>
 
-      <TransitionPresence show={isAdmin && posts.length > 0}>
-        <div>
-          {posts.map((post, index) => (
-            <div key={post.id}>
-              {index > 0 ? <Separator className="my-6" /> : null}
-              <TrashItem
-                post={post}
-                pending={pendingId === post.id}
-                onRestore={() => void handleRestore(post)}
-                onPermanentDelete={() => void handlePermanentDelete(post)}
-              />
-            </div>
-          ))}
-          {error ? (
-            <div className="mt-12 flex items-center gap-3" role="alert">
+          <TransitionPresence
+            show={isAdmin && !isLoading && Boolean(error) && posts.length === 0}
+            className="!translate-y-0 !scale-100"
+          >
+            <div className="flex items-center gap-3" role="alert">
               <p className="text-base leading-6 text-muted-foreground">
                 {error}
               </p>
@@ -198,16 +171,59 @@ export function MomentsTrash() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={loadMore}
+                onClick={loadInitial}
               >
                 重试
               </Button>
             </div>
-          ) : null}
-          {isLoadingMore ? <FeedSkeleton className="mt-12" /> : null}
+          </TransitionPresence>
+
+          <TransitionPresence
+            show={isAdmin && !isLoading && !error && posts.length === 0}
+            className="!translate-y-0 !scale-100"
+          >
+            <p className="text-base leading-6 text-muted-foreground">
+              回收站是空的
+            </p>
+          </TransitionPresence>
+
+          <TransitionPresence
+            show={isAdmin && !isLoading && posts.length > 0}
+            className="!translate-y-0 !scale-100"
+          >
+            <div>
+              {posts.map((post, index) => (
+                <div key={post.id}>
+                  {index > 0 ? <Separator className="my-6" /> : null}
+                  <TrashItem
+                    post={post}
+                    pending={pendingId === post.id}
+                    onRestore={() => void handleRestore(post)}
+                    onPermanentDelete={() => void handlePermanentDelete(post)}
+                  />
+                </div>
+              ))}
+              {error ? (
+                <div className="mt-12 flex items-center gap-3" role="alert">
+                  <p className="text-base leading-6 text-muted-foreground">
+                    {error}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={loadMore}
+                  >
+                    重试
+                  </Button>
+                </div>
+              ) : null}
+              {isLoadingMore ? <FeedSkeleton className="mt-12" /> : null}
+            </div>
+          </TransitionPresence>
         </div>
-      </TransitionPresence>
-      <div ref={sentinelRef} className="h-px" aria-hidden="true" />
+        <div ref={sentinelRef} className="h-px" aria-hidden="true" />
+      </div>
     </MomentsShell>
   );
 }
@@ -227,10 +243,21 @@ function TrashItem({
 
   return (
     <article className="flex min-w-0 flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          删除于 {deletedAtFormatter.format(new Date(post.deletedAt))}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          <p>
+            创建于{" "}
+            <time dateTime={post.createdAt}>
+              {dateTimeFormatter.format(new Date(post.createdAt))}
+            </time>
+          </p>
+          <p>
+            删除于{" "}
+            <time dateTime={post.deletedAt}>
+              {dateTimeFormatter.format(new Date(post.deletedAt))}
+            </time>
+          </p>
+        </div>
         <div className="flex items-center gap-1">
           <Button
             type="button"

@@ -17,16 +17,11 @@ import { useAdminAccess } from "./auth-controls";
 import { Composer } from "./composer";
 import { isValidDate, mergePosts } from "./date";
 import { Feed } from "./feed";
+import { readCachedHomeFeed, writeCachedHomeFeed } from "./feed-cache";
 import { FIRST_MOMENT_CONTENT, FirstMomentGuide } from "./first-moment-guide";
 import { MomentsShell } from "./moments-shell";
 import { PageTitle } from "./page-title";
 
-interface CachedHomeFeed {
-  posts: MomentPost[];
-  nextCursor: string | null;
-}
-
-let cachedHomeFeed: CachedHomeFeed | null = null;
 let pendingHomeRequest: ReturnType<typeof listPosts> | null = null;
 
 function loadLatestHomeFeed() {
@@ -52,13 +47,13 @@ function readHashDate(): string | undefined {
 export function MomentsHome() {
   const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
   const [posts, setPosts] = useState<MomentPost[]>(
-    () => cachedHomeFeed?.posts ?? [],
+    () => readCachedHomeFeed()?.posts ?? [],
   );
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(
-    () => cachedHomeFeed?.nextCursor,
+    () => readCachedHomeFeed()?.nextCursor,
   );
   const [isInitialLoading, setIsInitialLoading] = useState(
-    () => cachedHomeFeed === null,
+    () => readCachedHomeFeed() === null,
   );
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +72,7 @@ export function MomentsHome() {
 
   const loadInitial = useCallback(async (anchorDate?: string) => {
     const revisionAtStart = contentRevision.current;
-    const isBackgroundRefresh = !anchorDate && cachedHomeFeed !== null;
+    const isBackgroundRefresh = !anchorDate && readCachedHomeFeed() !== null;
     try {
       let page = anchorDate
         ? await retryRead(() => listPosts({ limit: 20, anchorDate }))
@@ -96,10 +91,10 @@ export function MomentsHome() {
       setError(null);
       scrollCompletedFor.current = null;
       if (!anchorDate) {
-        cachedHomeFeed = {
+        writeCachedHomeFeed({
           posts: page.items,
           nextCursor: page.nextCursor,
-        };
+        });
       }
     } catch {
       if (!isBackgroundRefresh || anchorDate) {
@@ -127,7 +122,7 @@ export function MomentsHome() {
   useEffect(() => {
     if (isInitialLoading || targetDate !== null || nextCursor === undefined)
       return;
-    cachedHomeFeed = { posts, nextCursor };
+    writeCachedHomeFeed({ posts, nextCursor });
   }, [isInitialLoading, nextCursor, posts, targetDate]);
 
   useEffect(() => {
@@ -289,7 +284,7 @@ export function MomentsHome() {
 
   return (
     <MomentsShell>
-      <div className="mx-auto w-full max-w-[638px]">
+      <div className="mx-auto w-full max-w-[640px]">
         <PageTitle>Moments</PageTitle>
 
         <div className="grid">
