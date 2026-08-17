@@ -18,8 +18,62 @@ Public endpoints work without Clerk configuration. To test authenticated endpoin
 
 - Runtime document: `GET /openapi.json`
 - Checked-in artifact: `openapi/openapi.json`
+- 中文调试文档：`openapi/openapi.zh-CN.json`（可直接导入 Postman 或 ApiFox）
 - Regenerate: `pnpm openapi:generate`
 - Drift check: `pnpm openapi:check`
+
+v2 (breaking) changes:
+
+- `GET /api/v1/dates/{date}` was merged into `GET /api/v1/posts?date=YYYY-MM-DD`.
+  The response is the cursor-page envelope plus `date` and `navigation`; `nextCursor` is `null` in date mode. `cursor`, `anchorDate` and `date` are mutually exclusive.
+- `GET /api/v1/random` now returns the same envelope (`date` + `navigation`, `nextCursor: null`).
+- `POST /api/v1/posts` and `PATCH` reject more than 18 image URLs.
+- New `POST /api/v1/statistics/rebuild` (administrator only) recomputes the statistics aggregates from `posts`.
+
+## Statistics aggregates
+
+After `migrations/0004_derived_data_triggers.sql` is applied, `GET /api/v1/statistics` never scans `posts`. Its normal path reads three small tables created by `migrations/0003_statistics_aggregates.sql` in one statement:
+
+- `statistics_daily` — per Asia/Shanghai date: post count, character count, longest post, image count.
+- `statistics_hourly` — post count per hour of day (0–23).
+- `statistics_meta` — rebuild and derived-data schema markers.
+
+Every create, update, soft-delete and restore is now one post mutation. D1 triggers update the statistics in the same SQLite transaction, so direct SQL maintenance cannot bypass the aggregates and readers never observe a post without its matching statistics. All character and image counts use SQLite `length()`/`json_array_length()` in both the triggers and rebuild path. The longest-post query is only rerun when an edit or deletion may have removed the current maximum.
+
+The same migration creates `public_post_slots`, a dense `1..N` mapping maintained by triggers. `GET /api/v1/random` samples one primary-key slot and retrieves that date and its navigation in one query; it no longer performs `COUNT(*) + OFFSET` over `posts`. Date detail and navigation are likewise returned by one query.
+
+During the short Worker-first upgrade window, before migration 0004 exists, statistics fall back to a fresh direct aggregation from `posts` and random selection falls back to the legacy query. These paths are slower but never return stale data. Once the migration marker exists, they are not used.
+
+Rebuild sources:
+
+- `POST /api/v1/statistics/rebuild` (administrator bearer token) recomputes everything from `posts` and returns fresh statistics. The statistics page exposes this as a "重新计算统计数据" button for signed-in administrators.
+- `migrations/0004_derived_data_triggers.sql` backfills all aggregates and random slots before enabling the version marker.
+
+## D1 usage and cache consistency
+
+D1 billing primarily counts rows read and written, not only Worker binding calls. The optimized queries therefore reduce both round trips and scanned rows. `db.batch()` is reserved for the administrator rebuild, where its statements must be transactional; D1 executes batch statements sequentially rather than in parallel.
+
+All API responses use `Cache-Control: no-store`. Cloudflare Cache API entries are data-center-local and cannot be invalidated globally with one delete, so caching mutable posts or statistics could return stale data. Correctness is provided by indexed D1 reads and transactionally maintained derived tables instead.
+
+## Rate limiting (dashboard)
+
+Public read endpoints (`/api/v1/posts`, `/api/v1/random`, `/api/v1/statistics`) are unauthenticated and should be rate limited at the edge. In the Cloudflare dashboard open **Security → WAF → Rate limiting rules** and create a rule for your Worker zone:
+
+- Field: URI Path, Operator: equals, Value: `/api/v1/posts` (add further rules for `/api/v1/random` and `/api/v1/statistics`, or use a wildcard/regex such as `^/api/v1/(posts|random|statistics)` when available on your plan).
+- Requests: e.g. 60 per 1 minute, counting period 60 seconds.
+- Action: Managed Challenge (or Block).
+
+Rules live in the dashboard, not in `wrangler.jsonc`.
+
+## Upgrading an existing deployment to v2
+
+1. From the repository root run `pnpm deploy:api`. Keep the complete command intact: Wrangler deploys the compatibility-aware Worker, then applies pending migrations 0003 and 0004. Already applied migrations are skipped.
+2. Deploy the web app (Vercel). The frontend now calls `GET /api/v1/posts?date=...` instead of `/api/v1/dates/...`, so deploy the Worker first to avoid a window of 404s.
+3. Optionally call the administrator-only rebuild endpoint once as a verification step. Migration 0004 already backfills the data, so this is not required for correctness.
+
+No new environment variable is required. The schema migration is required and is applied by `pnpm deploy:api`; no manual data conversion is needed. The D1 snapshot/backup policy for your deployment should still be followed before any production migration.
+
+Local development keeps its own D1 state under `.wrangler/state`. After pulling a release that adds migrations, re-run `pnpm db:migrate:local` in `apps/api` so the local database gets the new tables and triggers.
 
 ## Database
 
