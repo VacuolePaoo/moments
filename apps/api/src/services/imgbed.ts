@@ -2,6 +2,7 @@ import { ApiError } from "../lib/errors";
 import type { ImgBedBindings } from "../types";
 
 const MAX_DELETE_BATCH_SIZE = 500;
+const MAX_SINGLE_DELETE_CONCURRENCY = 6;
 
 interface ImgBedDeleteResponse {
   success?: unknown;
@@ -50,6 +51,35 @@ function configuredImgBed(env: ImgBedBindings) {
   return { baseUrl, token, endpoint: `${rawBaseUrl}/api/manage/delete/batch` };
 }
 
+async function requestImgBed(
+  input: string,
+  init: RequestInit,
+  fetcher: ImgBedFetch,
+): Promise<{ response: Response; result: ImgBedDeleteResponse }> {
+  let response: Response;
+  try {
+    response = await fetcher(input, init);
+  } catch {
+    throw new ApiError(
+      502,
+      "IMAGE_DELETE_FAILED",
+      "The image service could not be reached.",
+    );
+  }
+
+  try {
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null) throw new Error();
+    return { response, result: body };
+  } catch {
+    throw new ApiError(
+      502,
+      "IMAGE_DELETE_FAILED",
+      "The image service returned an invalid response.",
+    );
+  }
+}
+
 export function imgBedFileIdFromUrl(
   imageUrl: string,
   baseUrl: URL,
@@ -88,36 +118,18 @@ async function deleteBatch(
   fileIds: string[],
   fetcher: ImgBedFetch,
 ): Promise<string[]> {
-  let response: Response;
-  try {
-    response = await fetcher(endpoint, {
+  const { response, result } = await requestImgBed(
+    endpoint,
+    {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ fileIds }),
-    });
-  } catch {
-    throw new ApiError(
-      502,
-      "IMAGE_DELETE_FAILED",
-      "The image service could not be reached.",
-    );
-  }
-
-  let result: ImgBedDeleteResponse;
-  try {
-    const body: unknown = await response.json();
-    if (typeof body !== "object" || body === null) throw new Error();
-    result = body;
-  } catch {
-    throw new ApiError(
-      502,
-      "IMAGE_DELETE_FAILED",
-      "The image service returned an invalid response.",
-    );
-  }
+    },
+    fetcher,
+  );
 
   if (!response.ok) {
     throw new ApiError(
@@ -202,43 +214,50 @@ async function deleteSingle(
   const basePath = baseUrl.pathname.replace(/\/+$/u, "");
   const endpoint = `${baseUrl.origin}${basePath}/api/manage/delete/${encodedFileId(fileId)}`;
 
-  let response: Response;
-  try {
-    response = await fetcher(endpoint, {
+  const { response, result } = await requestImgBed(
+    endpoint,
+    {
       method: "GET",
       headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch {
-    throw new ApiError(
-      502,
-      "IMAGE_DELETE_FAILED",
-      "The image service could not be reached.",
-    );
-  }
+    },
+    fetcher,
+  );
 
-  let result: ImgBedDeleteResponse;
-  try {
-    const body: unknown = await response.json();
-    if (typeof body !== "object" || body === null) throw new Error();
-    result = body;
-  } catch {
-    throw new ApiError(
-      502,
-      "IMAGE_DELETE_FAILED",
-      "The image service returned an invalid response.",
-    );
-  }
-
-  if (
-    !response.ok ||
-    result.success !== true ||
-    result.fileId !== fileId
-  ) {
+  if (!response.ok || result.success !== true || result.fileId !== fileId) {
     throw new ApiError(
       502,
       "IMAGE_DELETE_FAILED",
       "The hosted image could not be deleted.",
     );
+  }
+}
+
+async function deleteSingles(
+  baseUrl: URL,
+  token: string,
+  fileIds: string[],
+  fetcher: ImgBedFetch,
+): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(MAX_SINGLE_DELETE_CONCURRENCY, fileIds.length) },
+    async () => {
+      while (nextIndex < fileIds.length) {
+        const fileId = fileIds[nextIndex];
+        nextIndex += 1;
+        if (fileId !== undefined) {
+          await deleteSingle(baseUrl, token, fileId, fetcher);
+        }
+      }
+    },
+  );
+  const results = await Promise.allSettled(workers);
+  const failure = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failure) {
+    if (failure.reason instanceof Error) throw failure.reason;
+    throw new Error("Image deletion failed with a non-error rejection.");
   }
 }
 
@@ -258,6 +277,7 @@ export async function deleteImgBedImages(
       }),
     ),
   ];
+  if (fileIds.length === 0) return;
 
   if (fileIds.length === 1) {
     const fileId = fileIds[0];
@@ -274,11 +294,7 @@ export async function deleteImgBedImages(
       await deleteSingle(baseUrl, token, fileId, fetcher);
     } else {
       const remaining = await deleteBatch(endpoint, token, batch, fetcher);
-      await Promise.all(
-        remaining.map((fileId) =>
-          deleteSingle(baseUrl, token, fileId, fetcher),
-        ),
-      );
+      await deleteSingles(baseUrl, token, remaining, fetcher);
     }
   }
 }

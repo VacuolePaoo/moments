@@ -1,5 +1,5 @@
 import { verifyToken } from "@clerk/backend";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 
 import { ApiError } from "./lib/errors";
 import type { AppEnv, TokenVerifier } from "./types";
@@ -53,13 +53,35 @@ function extractBearerToken(header: string | undefined): string {
   return match[1];
 }
 
+export function administratorUserId(env: Env): string {
+  if (
+    typeof env.ADMIN_CLERK_USER_ID !== "string" ||
+    env.ADMIN_CLERK_USER_ID.length === 0
+  ) {
+    throw new ApiError(
+      503,
+      "AUTH_NOT_CONFIGURED",
+      "Administrator access is not configured.",
+    );
+  }
+  return env.ADMIN_CLERK_USER_ID;
+}
+
+async function authenticateContext(
+  c: Context<AppEnv>,
+  verifier: TokenVerifier,
+): Promise<string> {
+  const token = extractBearerToken(c.req.header("Authorization"));
+  const { userId } = await verifier(token, c.env);
+  c.set("authenticatedUserId", userId);
+  return userId;
+}
+
 export function requireAuthentication(
   verifier: TokenVerifier,
 ): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const token = extractBearerToken(c.req.header("Authorization"));
-    const session = await verifier(token, c.env);
-    c.set("authenticatedUserId", session.userId);
+    await authenticateContext(c, verifier);
     await next();
   };
 }
@@ -68,20 +90,9 @@ export function requireAdministrator(
   verifier: TokenVerifier,
 ): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    if (
-      typeof c.env.ADMIN_CLERK_USER_ID !== "string" ||
-      c.env.ADMIN_CLERK_USER_ID.length === 0
-    ) {
-      throw new ApiError(
-        503,
-        "AUTH_NOT_CONFIGURED",
-        "Administrator access is not configured.",
-      );
-    }
-    const token = extractBearerToken(c.req.header("Authorization"));
-    const session = await verifier(token, c.env);
-    c.set("authenticatedUserId", session.userId);
-    if (session.userId !== c.env.ADMIN_CLERK_USER_ID) {
+    const adminUserId = administratorUserId(c.env);
+    const userId = await authenticateContext(c, verifier);
+    if (userId !== adminUserId) {
       throw new ApiError(
         403,
         "ADMIN_REQUIRED",
@@ -97,32 +108,13 @@ export function requireAdministratorForMethods(
   methods: readonly string[],
 ): MiddlewareHandler<AppEnv> {
   const methodSet = new Set(methods);
+  const requireAdmin = requireAdministrator(verifier);
   return async (c, next) => {
     if (!methodSet.has(c.req.method)) {
       await next();
       return;
     }
 
-    if (
-      typeof c.env.ADMIN_CLERK_USER_ID !== "string" ||
-      c.env.ADMIN_CLERK_USER_ID.length === 0
-    ) {
-      throw new ApiError(
-        503,
-        "AUTH_NOT_CONFIGURED",
-        "Administrator access is not configured.",
-      );
-    }
-    const token = extractBearerToken(c.req.header("Authorization"));
-    const session = await verifier(token, c.env);
-    c.set("authenticatedUserId", session.userId);
-    if (session.userId !== c.env.ADMIN_CLERK_USER_ID) {
-      throw new ApiError(
-        403,
-        "ADMIN_REQUIRED",
-        "Administrator access is required.",
-      );
-    }
-    await next();
+    await requireAdmin(c, next);
   };
 }

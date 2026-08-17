@@ -1,9 +1,8 @@
-export interface ImgBedBindings {
-  CFBED_BASE_URL?: string;
-  CFBED_API_TOKEN?: string;
-}
+export type ImgBedBindings = Partial<
+  Pick<Env, "CFBED_BASE_URL" | "CFBED_API_TOKEN">
+>;
 
-export type AppBindings = Env & ImgBedBindings;
+export type AppBindings = Env;
 
 export type AppEnv = {
   Bindings: AppBindings;

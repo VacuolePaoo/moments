@@ -32,7 +32,10 @@ describe("CloudFlare ImgBed deletion", () => {
       ),
     ).toBeNull();
     expect(
-      imgBedFileIdFromUrl("https://file.example.com/not-file/image.png", baseUrl),
+      imgBedFileIdFromUrl(
+        "https://file.example.com/not-file/image.png",
+        baseUrl,
+      ),
     ).toBeNull();
   });
 
@@ -62,9 +65,9 @@ describe("CloudFlare ImgBed deletion", () => {
     );
 
     expect(calls).toHaveLength(1);
-    expect(calls.every((call) => call.input.endsWith("/api/manage/delete/batch"))).toBe(
-      true,
-    );
+    expect(
+      calls.every((call) => call.input.endsWith("/api/manage/delete/batch")),
+    ).toBe(true);
     expect(calls[0]?.init.headers).toMatchObject({
       Authorization: "Bearer test-delete-token",
       "Content-Type": "application/json",
@@ -145,9 +148,7 @@ describe("CloudFlare ImgBed deletion", () => {
         const fileId = decodeURIComponent(input.slice(prefix.length));
         return Promise.resolve(Response.json({ success: true, fileId }));
       }
-      return Promise.resolve(
-        Response.json({ success: true, fileId: "batch" }),
-      );
+      return Promise.resolve(Response.json({ success: true, fileId: "batch" }));
     };
 
     await deleteImgBedImages(
@@ -170,6 +171,35 @@ describe("CloudFlare ImgBed deletion", () => {
       "https://file.example.com/api/manage/delete/moments/hello%20world.png",
       "https://file.example.com/api/manage/delete/moments/avatar.jpg",
     ]);
+  });
+
+  it("limits concurrent single-file fallback requests", async () => {
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
+    const fetcher: ImgBedFetch = async (input) => {
+      if (input.endsWith("/api/manage/delete/batch")) {
+        return Response.json({ success: true, fileId: "batch" });
+      }
+      activeRequests += 1;
+      maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      activeRequests -= 1;
+      const prefix = "https://file.example.com/api/manage/delete/";
+      return Response.json({
+        success: true,
+        fileId: decodeURIComponent(input.slice(prefix.length)),
+      });
+    };
+    const images = Array.from(
+      { length: 20 },
+      (_, index) =>
+        `https://file.example.com/file/moments/${String(index)}.png`,
+    );
+
+    await deleteImgBedImages(images, bindings, fetcher);
+
+    expect(maximumActiveRequests).toBeGreaterThan(1);
+    expect(maximumActiveRequests).toBeLessThanOrEqual(6);
   });
 
   it("retries only files reported as failed by a documented batch response", async () => {
@@ -235,9 +265,7 @@ describe("CloudFlare ImgBed deletion", () => {
         Response.json({
           success: false,
           deleted: ["moments/one.png"],
-          failed: [
-            { fileId: "moments/two.png", error: "Delete file failed" },
-          ],
+          failed: [{ fileId: "moments/two.png", error: "Delete file failed" }],
         }),
       );
 
