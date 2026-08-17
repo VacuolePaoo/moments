@@ -1,35 +1,40 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Moments API",
+    "title": "Moments API（中文）",
     "version": "2.0.0",
-    "description": "Public read and Clerk-protected write API for a personal Moments site. v2 merges date reads into GET /posts (?date=) and serves statistics from incremental aggregates."
+    "description": "Moments 个人内容站点 API：公开读取，写操作由 Clerk 管理员鉴权保护。v2 将日期读取合并进 GET /posts（?date=），统计改由增量聚合表提供。"
   },
   "servers": [
     {
-      "url": "/"
+      "url": "http://localhost:8787",
+      "description": "本地 Wrangler 开发服务器；导入后可改为线上 API 地址。"
     }
   ],
   "tags": [
     {
-      "name": "System",
-      "description": "Service metadata and health."
+      "name": "系统",
+      "description": "服务元数据与健康状态。"
     },
     {
-      "name": "Posts",
-      "description": "Public post reads (feed, date mode, random) and administrator mutations."
+      "name": "内容",
+      "description": "公开读取内容，以及管理员创建、编辑和删除内容。"
     },
     {
-      "name": "Statistics",
-      "description": "Aggregated posting statistics and administrator maintenance."
+      "name": "日期",
+      "description": "按亚洲/上海日期读取内容并导航。"
     },
     {
-      "name": "Trash",
-      "description": "Administrator recycle bin management."
+      "name": "统计",
+      "description": "每日发布统计与管理员统计文案。"
     },
     {
-      "name": "Authentication",
-      "description": "Clerk session and administrator status."
+      "name": "回收站",
+      "description": "管理员查看、恢复和永久删除内容。"
+    },
+    {
+      "name": "身份认证",
+      "description": "Clerk 会话与管理员状态。"
     }
   ],
   "components": {
@@ -37,8 +42,8 @@
       "ClerkBearer": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "Clerk session JWT",
-        "description": "Clerk session token returned by getToken()."
+        "bearerFormat": "Clerk 会话 JWT",
+        "description": "Clerk getToken() 返回的会话令牌。请在请求头中填写 Authorization: Bearer <token>。"
       }
     },
     "schemas": {
@@ -49,17 +54,20 @@
             "type": "string",
             "enum": [
               "ok"
-            ]
+            ],
+            "description": "Worker 健康状态。"
           },
           "database": {
             "type": "string",
             "enum": [
               "ok"
-            ]
+            ],
+            "description": "D1 数据库健康状态。"
           },
           "timestamp": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "服务器生成响应时的 ISO 8601 时间。"
           }
         },
         "required": [
@@ -102,11 +110,13 @@
             "required": [
               "code",
               "message"
-            ]
+            ],
+            "description": "错误信息。"
           },
           "requestId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "用于日志追踪的请求 UUID。"
           }
         },
         "required": [
@@ -121,18 +131,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Post"
-            }
+            },
+            "description": "当前页内容列表。"
           },
           "nextCursor": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "下一页游标；没有更多内容时为 null。日期模式下恒为 null。"
           },
           "date": {
             "type": "string",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-            "description": "Present only in date mode (?date=...): the requested Asia/Shanghai date.",
+            "description": "仅在日期模式（?date=）下返回：请求的亚洲/上海日期。",
             "example": "2026-08-07"
           },
           "navigation": {
@@ -144,7 +156,7 @@
                   "null"
                 ],
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+                "description": "固定亚洲/上海时区的日历日期，格式为 YYYY-MM-DD。",
                 "example": "2026-08-07"
               },
               "olderDate": {
@@ -153,7 +165,7 @@
                   "null"
                 ],
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+                "description": "固定亚洲/上海时区的日历日期，格式为 YYYY-MM-DD。",
                 "example": "2026-08-07"
               }
             },
@@ -161,7 +173,7 @@
               "newerDate",
               "olderDate"
             ],
-            "description": "Present only in date mode (?date=...): adjacent dates that have posts."
+            "description": "仅在日期模式（?date=）下返回：相邻有内容日期的导航信息。"
           }
         },
         "required": [
@@ -175,12 +187,13 @@
           "id": {
             "type": "string",
             "format": "uuid",
-            "description": "Stable post ID.",
+            "description": "稳定的内容 UUID。",
             "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
           "content": {
             "type": "string",
-            "example": "今天完成了 Moments API。"
+            "example": "今天完成了 Moments API。",
+            "description": "规范化后的正文。图片内容允许为空字符串。"
           },
           "images": {
             "type": "array",
@@ -188,21 +201,24 @@
               "type": "string",
               "format": "uri"
             },
-            "description": "Ordered image URLs attached to this post.",
+            "description": "内容所附的有序图片 URL 列表。",
             "example": [
               "https://file.example.com/file/example.jpg"
             ]
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "创建时间，ISO 8601 格式。"
           },
           "updatedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "最后更新时间，ISO 8601 格式。"
           },
           "edited": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "内容是否在创建后编辑过。"
           }
         },
         "required": [
@@ -221,13 +237,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DailyMomentCount"
-            }
+            },
+            "description": "按亚洲/上海日期统计的每日发布数量。"
           },
           "administratorNarrative": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NarrativeParagraph"
-            }
+            },
+            "description": "后端生成的结构化管理员统计文案。"
           }
         },
         "required": [
@@ -241,12 +259,13 @@
           "date": {
             "type": "string",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-            "description": "Calendar date in the fixed Asia/Shanghai time zone.",
+            "description": "亚洲/上海日历日期。",
             "example": "2026-08-07"
           },
           "count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "当天发布且未删除的内容数量。"
           }
         },
         "required": [
@@ -262,7 +281,8 @@
             "items": {
               "$ref": "#/components/schemas/NarrativeSegment"
             },
-            "minItems": 1
+            "minItems": 1,
+            "description": "该段落包含的文本片段。"
           }
         },
         "required": [
@@ -273,11 +293,13 @@
         "type": "object",
         "properties": {
           "text": {
-            "type": "string"
+            "type": "string",
+            "description": "文本内容。"
           },
           "bold": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "前端是否应以粗体渲染该片段。"
           }
         },
         "required": [
@@ -288,7 +310,8 @@
         "type": "object",
         "properties": {
           "post": {
-            "$ref": "#/components/schemas/Post"
+            "$ref": "#/components/schemas/Post",
+            "description": "内容正文与元数据。"
           },
           "navigation": {
             "type": "object",
@@ -299,7 +322,7 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "Stable post ID.",
+                "description": "稳定的内容 UUID。",
                 "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
               },
               "olderId": {
@@ -308,14 +331,15 @@
                   "null"
                 ],
                 "format": "uuid",
-                "description": "Stable post ID.",
+                "description": "稳定的内容 UUID。",
                 "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
               }
             },
             "required": [
               "newerId",
               "olderId"
-            ]
+            ],
+            "description": "相邻公开内容的 ID。"
           }
         },
         "required": [
@@ -329,7 +353,7 @@
           "content": {
             "type": "string",
             "default": "",
-            "description": "Plain text. Consecutive spaces, tabs and line breaks are normalized before storage."
+            "description": "正文；保存前会规范化连续空格、制表符和换行。"
           },
           "images": {
             "type": "array",
@@ -339,7 +363,7 @@
             },
             "maxItems": 18,
             "default": [],
-            "description": "Ordered image URLs, at most 18. Text or at least one image is required."
+            "description": "有序图片 URL 列表，最多 18 张；正文和图片至少提供一项。"
           }
         },
         "additionalProperties": false
@@ -351,13 +375,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeletedPost"
-            }
+            },
+            "description": "当前页回收站内容列表。"
           },
           "nextCursor": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "下一页游标；没有更多内容时为 null。"
           }
         },
         "required": [
@@ -391,10 +417,12 @@
             "type": "boolean",
             "enum": [
               true
-            ]
+            ],
+            "description": "令牌是否已通过认证；成功响应固定为 true。"
           },
           "isAdmin": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "当前 Clerk 用户是否为配置的管理员。"
           }
         },
         "required": [
@@ -410,12 +438,12 @@
       "get": {
         "operationId": "healthCheck",
         "tags": [
-          "System"
+          "系统"
         ],
-        "summary": "Check Worker and D1 health",
+        "summary": "检查 Worker 与 D1 健康状态",
         "responses": {
           "200": {
-            "description": "The Worker can query D1.",
+            "description": "Worker 可以正常查询 D1。",
             "content": {
               "application/json": {
                 "schema": {
@@ -425,7 +453,7 @@
             }
           },
           "500": {
-            "description": "D1 is unavailable.",
+            "description": "D1 当前不可用。",
             "content": {
               "application/json": {
                 "schema": {
@@ -441,9 +469,9 @@
       "get": {
         "operationId": "listPosts",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "List posts, or return every post of one Asia/Shanghai date",
+        "summary": "分页获取内容列表，或返回某个亚洲/上海日期下的全部内容",
         "parameters": [
           {
             "schema": {
@@ -469,11 +497,11 @@
             "schema": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "description": "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor and date.",
+              "description": "从该亚洲/上海日期的末尾开始向更早内容分页；不能与 cursor 或 date 同时使用。",
               "example": "2026-08-07"
             },
             "required": false,
-            "description": "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor and date.",
+            "description": "从该亚洲/上海日期的末尾开始向更早内容分页；不能与 cursor 或 date 同时使用。",
             "name": "anchorDate",
             "in": "query"
           },
@@ -481,18 +509,18 @@
             "schema": {
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "description": "Return every post of this Asia/Shanghai date plus adjacent-date navigation, ignoring limit. Mutually exclusive with cursor and anchorDate.",
+              "description": "返回该亚洲/上海日期下的全部内容及相邻日期导航，忽略 limit；不能与 cursor 或 anchorDate 同时使用。",
               "example": "2026-08-07"
             },
             "required": false,
-            "description": "Return every post of this Asia/Shanghai date plus adjacent-date navigation, ignoring limit. Mutually exclusive with cursor and anchorDate.",
+            "description": "返回该亚洲/上海日期下的全部内容及相邻日期导航，忽略 limit；不能与 cursor 或 anchorDate 同时使用。",
             "name": "date",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "A newest-first cursor page, or a full day with navigation in date mode.",
+            "description": "按创建时间从新到旧排列的游标分页结果；日期模式下返回当天全部内容及导航。",
             "content": {
               "application/json": {
                 "schema": {
@@ -502,7 +530,7 @@
             }
           },
           "400": {
-            "description": "Invalid pagination cursor.",
+            "description": "分页游标无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -512,7 +540,7 @@
             }
           },
           "404": {
-            "description": "The requested date has no posts.",
+            "description": "请求的日期没有内容。",
             "content": {
               "application/json": {
                 "schema": {
@@ -522,7 +550,7 @@
             }
           },
           "422": {
-            "description": "Invalid query parameters.",
+            "description": "查询参数无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -532,7 +560,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -546,9 +574,9 @@
       "post": {
         "operationId": "createPost",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "Create a post",
+        "summary": "创建内容",
         "security": [
           {
             "ClerkBearer": []
@@ -566,7 +594,7 @@
         },
         "responses": {
           "201": {
-            "description": "Post created.",
+            "description": "内容创建成功。",
             "content": {
               "application/json": {
                 "schema": {
@@ -576,7 +604,7 @@
             }
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -586,7 +614,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -596,7 +624,7 @@
             }
           },
           "422": {
-            "description": "Invalid request body.",
+            "description": "请求体无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -606,7 +634,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -616,7 +644,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -632,12 +660,12 @@
       "get": {
         "operationId": "getMomentStatistics",
         "tags": [
-          "Statistics"
+          "统计"
         ],
-        "summary": "Get daily post counts and a rendered administrator narrative",
+        "summary": "获取每日发布数量与管理员统计文案",
         "responses": {
           "200": {
-            "description": "Daily counts and a structured administrator narrative computed in Asia/Shanghai.",
+            "description": "按亚洲/上海时区计算的每日数量和结构化管理员统计文案。",
             "content": {
               "application/json": {
                 "schema": {
@@ -647,7 +675,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -663,9 +691,9 @@
       "post": {
         "operationId": "rebuildMomentStatistics",
         "tags": [
-          "Statistics"
+          "统计"
         ],
-        "summary": "Recompute statistics aggregates from the posts table",
+        "summary": "从 posts 表重新计算统计聚合数据",
         "security": [
           {
             "ClerkBearer": []
@@ -673,7 +701,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Fresh statistics after the rebuild.",
+            "description": "重建后的最新统计信息。",
             "content": {
               "application/json": {
                 "schema": {
@@ -683,7 +711,7 @@
             }
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -693,7 +721,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -703,7 +731,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -713,7 +741,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -729,12 +757,12 @@
       "get": {
         "operationId": "getRandomMomentDate",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "Pick a random post and return every post from its date",
+        "summary": "随机选择一篇内容并返回当天的全部内容",
         "responses": {
           "200": {
-            "description": "The randomly selected Asia/Shanghai date and its posts.",
+            "description": "随机选中的亚洲/上海日期及当天内容。",
             "content": {
               "application/json": {
                 "schema": {
@@ -744,7 +772,7 @@
             }
           },
           "404": {
-            "description": "There are no posts to pick.",
+            "description": "当前没有可供随机选择的内容。",
             "content": {
               "application/json": {
                 "schema": {
@@ -754,7 +782,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -770,26 +798,26 @@
       "get": {
         "operationId": "getPostById",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "Get a post and its adjacent post IDs",
+        "summary": "获取单篇内容及相邻内容 ID",
         "parameters": [
           {
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stable post ID.",
+              "description": "稳定的内容 UUID。",
               "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
             },
             "required": true,
-            "description": "Stable post ID.",
+            "description": "稳定的内容 UUID。",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "Post detail.",
+            "description": "内容详情。",
             "content": {
               "application/json": {
                 "schema": {
@@ -799,7 +827,7 @@
             }
           },
           "404": {
-            "description": "Post not found.",
+            "description": "内容不存在。",
             "content": {
               "application/json": {
                 "schema": {
@@ -809,7 +837,7 @@
             }
           },
           "422": {
-            "description": "Invalid post ID.",
+            "description": "内容 ID 无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -819,7 +847,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -833,9 +861,9 @@
       "patch": {
         "operationId": "updatePost",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "Update a post",
+        "summary": "更新内容",
         "security": [
           {
             "ClerkBearer": []
@@ -846,11 +874,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stable post ID.",
+              "description": "稳定的内容 UUID。",
               "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
             },
             "required": true,
-            "description": "Stable post ID.",
+            "description": "稳定的内容 UUID。",
             "name": "id",
             "in": "path"
           }
@@ -867,7 +895,7 @@
         },
         "responses": {
           "200": {
-            "description": "Post updated.",
+            "description": "内容更新成功。",
             "content": {
               "application/json": {
                 "schema": {
@@ -877,7 +905,7 @@
             }
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -887,7 +915,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -897,7 +925,7 @@
             }
           },
           "404": {
-            "description": "Post not found.",
+            "description": "内容不存在。",
             "content": {
               "application/json": {
                 "schema": {
@@ -907,7 +935,7 @@
             }
           },
           "422": {
-            "description": "Invalid request.",
+            "description": "请求无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -917,7 +945,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -927,7 +955,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -941,9 +969,9 @@
       "delete": {
         "operationId": "deletePost",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "Soft-delete a post",
+        "summary": "将内容移入回收站",
         "security": [
           {
             "ClerkBearer": []
@@ -954,21 +982,21 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stable post ID.",
+              "description": "稳定的内容 UUID。",
               "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
             },
             "required": true,
-            "description": "Stable post ID.",
+            "description": "稳定的内容 UUID。",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "204": {
-            "description": "Post moved to the recycle bin."
+            "description": "内容已移入回收站。"
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -978,7 +1006,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -988,7 +1016,7 @@
             }
           },
           "404": {
-            "description": "Post not found.",
+            "description": "内容不存在。",
             "content": {
               "application/json": {
                 "schema": {
@@ -998,7 +1026,7 @@
             }
           },
           "422": {
-            "description": "Invalid post ID.",
+            "description": "内容 ID 无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1008,7 +1036,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1018,7 +1046,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1034,9 +1062,9 @@
       "post": {
         "operationId": "restorePost",
         "tags": [
-          "Posts"
+          "内容"
         ],
-        "summary": "Restore a soft-deleted post",
+        "summary": "恢复回收站内容",
         "security": [
           {
             "ClerkBearer": []
@@ -1047,18 +1075,18 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stable post ID.",
+              "description": "稳定的内容 UUID。",
               "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
             },
             "required": true,
-            "description": "Stable post ID.",
+            "description": "稳定的内容 UUID。",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "Post restored.",
+            "description": "内容恢复成功。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1068,7 +1096,7 @@
             }
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1078,7 +1106,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1088,7 +1116,7 @@
             }
           },
           "404": {
-            "description": "Post not found.",
+            "description": "内容不存在。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1098,7 +1126,7 @@
             }
           },
           "409": {
-            "description": "Post is not deleted.",
+            "description": "内容不在回收站中。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1108,7 +1136,7 @@
             }
           },
           "422": {
-            "description": "Invalid post ID.",
+            "description": "内容 ID 无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1118,7 +1146,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1128,7 +1156,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1144,9 +1172,9 @@
       "get": {
         "operationId": "listDeletedPosts",
         "tags": [
-          "Trash"
+          "回收站"
         ],
-        "summary": "List soft-deleted posts",
+        "summary": "分页获取回收站内容",
         "security": [
           {
             "ClerkBearer": []
@@ -1176,7 +1204,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A newest-deleted-first cursor page.",
+            "description": "按删除时间从新到旧排列的回收站游标分页结果。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1186,7 +1214,7 @@
             }
           },
           "400": {
-            "description": "Invalid pagination cursor.",
+            "description": "分页游标无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1196,7 +1224,7 @@
             }
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1206,7 +1234,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1216,7 +1244,7 @@
             }
           },
           "422": {
-            "description": "Invalid query parameters.",
+            "description": "查询参数无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1226,7 +1254,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1236,7 +1264,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1252,9 +1280,9 @@
       "delete": {
         "operationId": "permanentlyDeletePost",
         "tags": [
-          "Trash"
+          "回收站"
         ],
-        "summary": "Permanently delete a post and its managed hosted images",
+        "summary": "永久删除内容及其托管图片",
         "security": [
           {
             "ClerkBearer": []
@@ -1265,21 +1293,21 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stable post ID.",
+              "description": "稳定的内容 UUID。",
               "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
             },
             "required": true,
-            "description": "Stable post ID.",
+            "description": "稳定的内容 UUID。",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "204": {
-            "description": "Hosted images and post permanently deleted."
+            "description": "托管图片和内容已永久删除。"
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1289,7 +1317,7 @@
             }
           },
           "403": {
-            "description": "Administrator access required.",
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1299,7 +1327,7 @@
             }
           },
           "404": {
-            "description": "Post not found.",
+            "description": "内容不存在。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1309,7 +1337,7 @@
             }
           },
           "409": {
-            "description": "Post is not in the trash.",
+            "description": "内容不在回收站中。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1319,7 +1347,7 @@
             }
           },
           "422": {
-            "description": "Invalid post ID.",
+            "description": "内容 ID 无效。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1329,7 +1357,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1339,7 +1367,7 @@
             }
           },
           "502": {
-            "description": "Hosted image deletion failed.",
+            "description": "托管图片删除失败。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1349,7 +1377,7 @@
             }
           },
           "503": {
-            "description": "Authentication or hosted image deletion is not configured.",
+            "description": "身份认证或托管图片删除服务尚未配置。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1365,9 +1393,9 @@
       "get": {
         "operationId": "getAuthStatus",
         "tags": [
-          "Authentication"
+          "身份认证"
         ],
-        "summary": "Get authenticated administrator status",
+        "summary": "获取当前用户的管理员状态",
         "security": [
           {
             "ClerkBearer": []
@@ -1375,7 +1403,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Authentication status.",
+            "description": "当前用户的身份认证与管理员状态。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1385,7 +1413,7 @@
             }
           },
           "401": {
-            "description": "Authentication required.",
+            "description": "需要登录。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1395,7 +1423,7 @@
             }
           },
           "500": {
-            "description": "Unexpected server error.",
+            "description": "服务器发生意外错误。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1405,7 +1433,7 @@
             }
           },
           "503": {
-            "description": "Authentication is not configured.",
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {

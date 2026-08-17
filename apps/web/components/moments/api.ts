@@ -7,9 +7,16 @@ export interface MomentPost {
   edited: boolean;
 }
 
+export interface DateNavigation {
+  newerDate: string | null;
+  olderDate: string | null;
+}
+
 export interface PostList {
   items: MomentPost[];
   nextCursor: string | null;
+  date?: string;
+  navigation?: DateNavigation;
 }
 
 export interface DeletedMomentPost extends MomentPost {
@@ -32,14 +39,12 @@ export interface DateDetail {
 
 export interface MomentStatistics {
   days: Array<{ date: string; count: number }>;
-  summary: {
-    firstDate: string | null;
-    totalPosts: number;
-    activeDays: number;
-    peakDate: string | null;
-    peakPosts: number;
-  };
+  administratorNarrative: Array<{
+    segments: Array<{ text: string; bold: boolean }>;
+  }>;
 }
+
+export const MAX_IMAGES_PER_POST = 18;
 
 export interface AuthStatus {
   authenticated: true;
@@ -145,24 +150,32 @@ export function listPosts(
     limit?: number;
     cursor?: string;
     anchorDate?: string;
+    date?: string;
     signal?: AbortSignal;
   } = {},
 ): Promise<PostList> {
   const query = new URLSearchParams({ limit: String(options.limit ?? 20) });
   if (options.cursor) query.set("cursor", options.cursor);
   if (options.anchorDate) query.set("anchorDate", options.anchorDate);
+  if (options.date) query.set("date", options.date);
   return request<PostList>(`/api/v1/posts?${query.toString()}`, {
     signal: options.signal,
   });
 }
 
-export function getDateDetail(
+export async function getDateDetail(
   date: string,
   signal?: AbortSignal,
 ): Promise<DateDetail> {
-  return request<DateDetail>(`/api/v1/dates/${encodeURIComponent(date)}`, {
-    signal,
-  });
+  const page = await listPosts({ date, signal });
+  if (page.date === undefined || page.navigation === undefined) {
+    throw new MomentsApiError(
+      500,
+      "INVALID_RESPONSE",
+      "返回的日期数据不完整。",
+    );
+  }
+  return { date: page.date, items: page.items, navigation: page.navigation };
 }
 
 export function getMomentStatistics(
@@ -171,8 +184,25 @@ export function getMomentStatistics(
   return request<MomentStatistics>("/api/v1/statistics", { signal });
 }
 
-export function getRandomMomentDate(signal?: AbortSignal): Promise<DateDetail> {
-  return request<DateDetail>("/api/v1/random", { signal });
+export function rebuildStatistics(token: string): Promise<MomentStatistics> {
+  return request<MomentStatistics>("/api/v1/statistics/rebuild", {
+    method: "POST",
+    token,
+  });
+}
+
+export async function getRandomMomentDate(
+  signal?: AbortSignal,
+): Promise<DateDetail> {
+  const page = await request<PostList>("/api/v1/random", { signal });
+  if (page.date === undefined || page.navigation === undefined) {
+    throw new MomentsApiError(
+      500,
+      "INVALID_RESPONSE",
+      "返回的日期数据不完整。",
+    );
+  }
+  return { date: page.date, items: page.items, navigation: page.navigation };
 }
 
 export function getAuthStatus(

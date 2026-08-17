@@ -11,7 +11,13 @@ const nonAdminVerifier: TokenVerifier = () =>
   Promise.resolve({ userId: "user_not_admin" });
 
 async function clearPosts() {
-  await env.DB.prepare("DELETE FROM posts").run();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM posts"),
+    env.DB.prepare("DELETE FROM statistics_daily"),
+    env.DB.prepare("DELETE FROM statistics_hourly"),
+    env.DB.prepare("DELETE FROM statistics_meta"),
+    env.DB.prepare("DELETE FROM public_post_slots"),
+  ]);
 }
 
 function jsonRequest(method: string, body?: unknown, token = "test-token") {
@@ -49,8 +55,9 @@ describe("Moments API", () => {
     expect(document.paths).toHaveProperty("/api/v1/posts");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}/restore");
-    expect(document.paths).toHaveProperty("/api/v1/dates/{date}");
+    expect(document.paths).not.toHaveProperty("/api/v1/dates/{date}");
     expect(document.paths).toHaveProperty("/api/v1/statistics");
+    expect(document.paths).toHaveProperty("/api/v1/statistics/rebuild");
     expect(document.paths).toHaveProperty("/api/v1/random");
     expect(document.paths).toHaveProperty("/api/v1/trash");
     expect(document.paths).toHaveProperty("/api/v1/trash/{id}");
@@ -172,6 +179,33 @@ describe("Moments API", () => {
     expect(detail.navigation.newerId).toBe(second.id);
     expect(detail.navigation.olderId).toBeNull();
 
+    const sharedTimestamp = "2026-08-08T00:00:00.000Z";
+    const tiedIds = [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+    ] as const;
+    await env.DB.batch(
+      tiedIds.map((id) =>
+        env.DB.prepare(
+          `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+           VALUES (?, ?, '[]', ?, ?)`,
+        ).bind(id, id, sharedTimestamp, sharedTimestamp),
+      ),
+    );
+    const tiedDetailResponse = await app.request(
+      `/api/v1/posts/${tiedIds[1]}`,
+      {},
+      env,
+    );
+    const tiedDetail = await tiedDetailResponse.json<{
+      navigation: { newerId: string | null; olderId: string | null };
+    }>();
+    expect(tiedDetail.navigation).toEqual({
+      newerId: tiedIds[2],
+      olderId: tiedIds[0],
+    });
+
     const updateResponse = await app.request(
       `/api/v1/posts/${first.id}`,
       jsonRequest("PATCH", { content: "更新   后" }),
@@ -264,7 +298,7 @@ describe("Moments API", () => {
 
     const app = createApp();
     const detailResponse = await app.request(
-      "/api/v1/dates/2026-08-07",
+      "/api/v1/posts?date=2026-08-07",
       {},
       env,
     );
@@ -272,9 +306,11 @@ describe("Moments API", () => {
     const detail = await detailResponse.json<{
       date: string;
       items: Array<{ id: string }>;
+      nextCursor: string | null;
       navigation: { newerDate: string | null; olderDate: string | null };
     }>();
     expect(detail.date).toBe("2026-08-07");
+    expect(detail.nextCursor).toBeNull();
     expect(detail.items.map((item) => item.id)).toEqual([
       rows[2][0],
       rows[1][0],
@@ -307,15 +343,25 @@ describe("Moments API", () => {
     );
     expect(conflictResponse.status).toBe(422);
 
+    const dateWithCursorResponse = await app.request(
+      `/api/v1/posts?date=2026-08-07&cursor=${encodeURIComponent(anchored.nextCursor ?? "unused")}`,
+      {},
+      env,
+    );
+    expect(dateWithCursorResponse.status).toBe(422);
+
     expect(
-      (await app.request("/api/v1/dates/2026-02-30", {}, env)).status,
+      (await app.request("/api/v1/posts?date=2026-02-30", {}, env)).status,
     ).toBe(422);
     expect(
-      (await app.request("/api/v1/dates/2026-08-09", {}, env)).status,
+      (await app.request("/api/v1/posts?date=2026-08-09", {}, env)).status,
+    ).toBe(404);
+    expect(
+      (await app.request("/api/v1/dates/2026-08-07", {}, env)).status,
     ).toBe(404);
   });
 
-  it("returns daily statistics in Asia/Shanghai and excludes deleted posts", async () => {
+  it("returns daily statistics and an administrator narrative in Asia/Shanghai while excluding deleted posts", async () => {
     const rows = [
       [
         "66666666-6666-4666-8666-666666666661",
@@ -353,19 +399,236 @@ describe("Moments API", () => {
 
     const response = await createApp().request("/api/v1/statistics", {}, env);
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      days: [
-        { date: "2026-08-06", count: 1 },
-        { date: "2026-08-07", count: 2 },
-      ],
-      summary: {
-        firstDate: "2026-08-06",
-        totalPosts: 3,
-        activeDays: 2,
-        peakDate: "2026-08-07",
-        peakPosts: 2,
+    const statistics = await response.json<{
+      days: Array<{ date: string; count: number }>;
+      administratorNarrative: Array<{
+        segments: Array<{ text: string; bold: boolean }>;
+      }>;
+    }>();
+    expect(statistics.days).toEqual([
+      { date: "2026-08-06", count: 1 },
+      { date: "2026-08-07", count: 2 },
+    ]);
+    expect(statistics.administratorNarrative).toEqual([
+      {
+        segments: [
+          {
+            text: "坚持下去，Moments正在为你统计数据",
+            bold: false,
+          },
+        ],
       },
+    ]);
+    const narrativeText = statistics.administratorNarrative
+      .flatMap((paragraph) => paragraph.segments)
+      .map((segment) => segment.text)
+      .join("");
+    expect(narrativeText).not.toContain("一共写下了");
+    expect(narrativeText).not.toContain("已删除");
+  });
+
+  it("maintains statistics aggregates incrementally across writes", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    const imageA = "https://file.vacu.top/file/moments/a.png";
+    const imageB = "https://file.vacu.top/file/moments/b.png";
+
+    async function readDaily(): Promise<{
+      post_count: number;
+      character_count: number;
+      longest_post_characters: number;
+      image_count: number;
+    } | null> {
+      return env.DB.prepare(
+        "SELECT post_count, character_count, longest_post_characters, image_count FROM statistics_daily",
+      ).first();
+    }
+
+    const firstResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "一二三", images: [imageA, imageB] }),
+      env,
+    );
+    const first = await firstResponse.json<{ id: string }>();
+
+    // Without the version marker, reads aggregate posts directly and stay fresh.
+    const initial = await createApp().request("/api/v1/statistics", {}, env);
+    expect(initial.status).toBe(200);
+    expect(await readDaily()).toEqual({
+      post_count: 1,
+      character_count: 3,
+      longest_post_characters: 3,
+      image_count: 2,
     });
+
+    const secondResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "四" }),
+      env,
+    );
+    const second = await secondResponse.json<{ id: string }>();
+
+    const updateResponse = await app.request(
+      `/api/v1/posts/${first.id}`,
+      jsonRequest("PATCH", { content: "五个字了", images: [imageA] }),
+      env,
+    );
+    expect(updateResponse.status).toBe(200);
+    expect(await readDaily()).toEqual({
+      post_count: 2,
+      character_count: 5,
+      longest_post_characters: 4,
+      image_count: 1,
+    });
+
+    await app.request(`/api/v1/posts/${second.id}`, jsonRequest("DELETE"), env);
+    expect(await readDaily()).toEqual({
+      post_count: 1,
+      character_count: 4,
+      longest_post_characters: 4,
+      image_count: 1,
+    });
+
+    await app.request(
+      `/api/v1/posts/${second.id}/restore`,
+      jsonRequest("POST"),
+      env,
+    );
+    expect(await readDaily()).toEqual({
+      post_count: 2,
+      character_count: 5,
+      longest_post_characters: 4,
+      image_count: 1,
+    });
+
+    // The rebuild endpoint recomputes the same aggregates from posts.
+    const rebuildResponse = await app.request(
+      "/api/v1/statistics/rebuild",
+      jsonRequest("POST"),
+      env,
+    );
+    expect(rebuildResponse.status).toBe(200);
+    expect(await readDaily()).toEqual({
+      post_count: 2,
+      character_count: 5,
+      longest_post_characters: 4,
+      image_count: 1,
+    });
+    const [rebuilt, reread] = await Promise.all([
+      rebuildResponse.json<{ days: Array<{ date: string; count: number }> }>(),
+      (
+        await createApp().request("/api/v1/statistics", {}, env)
+      ).json<{ days: Array<{ date: string; count: number }> }>(),
+    ]);
+    expect(rebuilt.days).toEqual(reread.days);
+    expect(rebuilt.days).toEqual([{ date: rebuilt.days[0]?.date ?? "", count: 2 }]);
+  });
+
+  it("keeps derived data correct for direct SQL writes and dense random slots", async () => {
+    const rows = [
+      ["88888888-8888-4888-8888-888888888881", "一", "2026-08-01T00:00:00.000Z"],
+      ["88888888-8888-4888-8888-888888888882", "二二", "2026-08-01T01:00:00.000Z"],
+      ["88888888-8888-4888-8888-888888888883", "三三三", "2026-08-01T02:00:00.000Z"],
+    ] as const;
+    await env.DB.batch(
+      rows.map(([id, content, createdAt]) =>
+        env.DB.prepare(
+          `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+           VALUES (?, ?, '[]', ?, ?)`,
+        ).bind(id, content, createdAt, createdAt),
+      ),
+    );
+
+    async function readSlots() {
+      return (
+        await env.DB.prepare(
+          "SELECT slot, post_id FROM public_post_slots ORDER BY slot",
+        ).all<{ slot: number; post_id: string }>()
+      ).results;
+    }
+
+    expect(await readSlots()).toEqual([
+      { slot: 1, post_id: rows[0][0] },
+      { slot: 2, post_id: rows[1][0] },
+      { slot: 3, post_id: rows[2][0] },
+    ]);
+
+    await env.DB.prepare(
+      "UPDATE posts SET deleted_at = ? WHERE id = ?",
+    )
+      .bind("2026-08-02T00:00:00.000Z", rows[1][0])
+      .run();
+    expect(await readSlots()).toEqual([
+      { slot: 1, post_id: rows[0][0] },
+      { slot: 2, post_id: rows[2][0] },
+    ]);
+
+    await env.DB.prepare(
+      "UPDATE posts SET content = '最长的一篇呀', updated_at = ? WHERE id = ?",
+    )
+      .bind("2026-08-02T00:00:01.000Z", rows[2][0])
+      .run();
+    await env.DB.prepare(
+      "UPDATE posts SET deleted_at = NULL WHERE id = ?",
+    )
+      .bind(rows[1][0])
+      .run();
+
+    expect((await readSlots()).map(({ slot }) => slot)).toEqual([1, 2, 3]);
+    await expect(
+      env.DB.prepare(
+        `SELECT post_count, character_count, longest_post_characters
+         FROM statistics_daily
+         WHERE date = '2026-08-01'`,
+      ).first(),
+    ).resolves.toEqual({
+      post_count: 3,
+      character_count: 9,
+      longest_post_characters: 6,
+    });
+
+    await env.DB.prepare(
+      "UPDATE posts SET content = '短', updated_at = ? WHERE id = ?",
+    )
+      .bind("2026-08-02T00:00:02.000Z", rows[2][0])
+      .run();
+    await expect(
+      env.DB.prepare(
+        `SELECT post_count, character_count, longest_post_characters
+         FROM statistics_daily
+         WHERE date = '2026-08-01'`,
+      ).first(),
+    ).resolves.toEqual({
+      post_count: 3,
+      character_count: 4,
+      longest_post_characters: 2,
+    });
+  });
+
+  it("protects statistics rebuild with administrator authentication", async () => {
+    const unauthenticated = await createApp().request(
+      "/api/v1/statistics/rebuild",
+      { method: "POST" },
+      env,
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const forbidden = await createApp({
+      tokenVerifier: nonAdminVerifier,
+    }).request("/api/v1/statistics/rebuild", jsonRequest("POST"), env);
+    expect(forbidden.status).toBe(403);
+  });
+
+  it("rejects posts with more than eighteen images", async () => {
+    const images = Array.from(
+      { length: 19 },
+      (_, index) => `https://file.vacu.top/file/moments/image-${String(index)}.png`,
+    );
+    const response = await createApp({ tokenVerifier: adminVerifier }).request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "太多了", images }),
+      env,
+    );
+    expect(response.status).toBe(422);
   });
 
   it("returns all posts from the date selected by the random endpoint", async () => {
@@ -397,6 +660,7 @@ describe("Moments API", () => {
 
     const response = await createApp().request("/api/v1/random", {}, env);
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     const detail = await response.json<{
       date: string;
       items: Array<{ id: string }>;
@@ -604,6 +868,11 @@ describe("Moments API", () => {
       env,
     );
     expect(invalidCursor.status).toBe(400);
+
+    const invalidTrashCursor = await createApp({
+      tokenVerifier: adminVerifier,
+    }).request("/api/v1/trash?cursor=bad", jsonRequest("GET"), env);
+    expect(invalidTrashCursor.status).toBe(400);
 
     const wrongOrigin = await createApp({
       tokenVerifier: adminVerifier,

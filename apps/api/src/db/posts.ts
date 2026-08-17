@@ -2,13 +2,18 @@ import { decodeCursor, encodeCursor } from "../lib/cursor";
 import { getShanghaiDayBounds, toShanghaiDate } from "../lib/date";
 import { ApiError } from "../lib/errors";
 import type {
-  DateDetail,
   DeletedPost,
   DeletedPostList,
-  MomentStatistics,
   Post,
+  PostDetail,
   PostList,
 } from "../schemas";
+
+export interface DateDetail {
+  date: string;
+  items: Post[];
+  navigation: { newerDate: string | null; olderDate: string | null };
+}
 
 interface PostRow {
   id: string;
@@ -30,11 +35,23 @@ interface CreatedAtRow {
   created_at: string;
 }
 
-interface IdCreatedAtRow extends IdRow, CreatedAtRow {}
+interface DateDetailRow extends PostRow {
+  newer_created_at: string | null;
+  older_created_at: string | null;
+}
 
-interface DailyMomentCountRow {
-  date: string;
-  count: number;
+interface RandomDateDetailRow extends DateDetailRow {
+  selected_date: string;
+}
+
+interface PostDetailRow extends PostRow {
+  newer_id: string | null;
+  older_id: string | null;
+}
+
+interface DeletedPostImagesRow {
+  images_json: string;
+  deleted_at: string | null;
 }
 
 function parseImages(value: string): string[] {
@@ -64,6 +81,24 @@ function toDeletedPost(row: DeletedPostRow): DeletedPost {
 }
 
 const postColumns = "id, content, images_json, created_at, updated_at";
+const qualifiedPostColumns =
+  "p.id, p.content, p.images_json, p.created_at, p.updated_at";
+
+function cursorPage<Row, Item>(
+  rows: Row[],
+  limit: number,
+  toItem: (row: Row) => Item,
+  cursorFromRow: (row: Row) => { createdAt: string; id: string },
+): { items: Item[]; nextCursor: string | null } {
+  const hasMore = rows.length > limit;
+  const visibleRows = hasMore ? rows.slice(0, limit) : rows;
+  const last = visibleRows.at(-1);
+  return {
+    items: visibleRows.map(toItem),
+    nextCursor:
+      hasMore && last !== undefined ? encodeCursor(cursorFromRow(last)) : null,
+  };
+}
 
 export async function listPosts(
   db: D1Database,
@@ -81,11 +116,11 @@ export async function listPosts(
               `SELECT ${postColumns}
            FROM posts
            WHERE deleted_at IS NULL
-             AND (created_at < ? OR (created_at = ? AND id < ?))
+             AND (created_at, id) < (?, ?)
            ORDER BY created_at DESC, id DESC
            LIMIT ?`,
             )
-            .bind(decoded.createdAt, decoded.createdAt, decoded.id, pageSize);
+            .bind(decoded.createdAt, decoded.id, pageSize);
         })()
       : anchorDate !== undefined
         ? db
@@ -107,18 +142,11 @@ export async function listPosts(
             )
             .bind(pageSize);
 
-  const result = await statement.all<PostRow>();
-  const hasMore = result.results.length > limit;
-  const visibleRows = hasMore ? result.results.slice(0, limit) : result.results;
-  const last = visibleRows.at(-1);
-
-  return {
-    items: visibleRows.map(toPost),
-    nextCursor:
-      hasMore && last !== undefined
-        ? encodeCursor({ createdAt: last.created_at, id: last.id })
-        : null,
-  };
+  const { results } = await statement.all<PostRow>();
+  return cursorPage(results, limit, toPost, (row) => ({
+    createdAt: row.created_at,
+    id: row.id,
+  }));
 }
 
 export async function listDeletedPosts(
@@ -145,25 +173,18 @@ export async function listDeletedPosts(
               `SELECT ${postColumns}, deleted_at
                FROM posts
                WHERE deleted_at IS NOT NULL
-                 AND (deleted_at < ? OR (deleted_at = ? AND id < ?))
+                 AND (deleted_at, id) < (?, ?)
                ORDER BY deleted_at DESC, id DESC
                LIMIT ?`,
             )
-            .bind(decoded.createdAt, decoded.createdAt, decoded.id, pageSize);
+            .bind(decoded.createdAt, decoded.id, pageSize);
         })();
 
-  const result = await statement.all<DeletedPostRow>();
-  const hasMore = result.results.length > limit;
-  const visibleRows = hasMore ? result.results.slice(0, limit) : result.results;
-  const last = visibleRows.at(-1);
-
-  return {
-    items: visibleRows.map(toDeletedPost),
-    nextCursor:
-      hasMore && last !== undefined
-        ? encodeCursor({ createdAt: last.deleted_at, id: last.id })
-        : null,
-  };
+  const { results } = await statement.all<DeletedPostRow>();
+  return cursorPage(results, limit, toDeletedPost, (row) => ({
+    createdAt: row.deleted_at,
+    id: row.id,
+  }));
 }
 
 export async function getDateDetail(
@@ -171,49 +192,36 @@ export async function getDateDetail(
   date: string,
 ): Promise<DateDetail> {
   const { startAt, endAt } = getShanghaiDayBounds(date);
-  const results = await db.batch<PostRow | CreatedAtRow>([
-    db
-      .prepare(
-        `SELECT ${postColumns}
-       FROM posts
-       WHERE deleted_at IS NULL AND created_at >= ? AND created_at < ?
-       ORDER BY created_at DESC, id DESC`,
-      )
-      .bind(startAt, endAt),
-    db
-      .prepare(
-        `SELECT created_at
-       FROM posts
-       WHERE deleted_at IS NULL AND created_at >= ?
-       ORDER BY created_at ASC, id ASC
-       LIMIT 1`,
-      )
-      .bind(endAt),
-    db
-      .prepare(
-        `SELECT created_at
-       FROM posts
-       WHERE deleted_at IS NULL AND created_at < ?
-       ORDER BY created_at DESC, id DESC
-       LIMIT 1`,
-      )
-      .bind(startAt),
-  ]);
+  const { results } = await db
+    .prepare(
+      `WITH navigation AS MATERIALIZED (
+         SELECT
+           (SELECT created_at
+            FROM posts
+            WHERE deleted_at IS NULL AND created_at >= ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1) AS newer_created_at,
+           (SELECT created_at
+            FROM posts
+            WHERE deleted_at IS NULL AND created_at < ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1) AS older_created_at
+       )
+       SELECT ${qualifiedPostColumns},
+              navigation.newer_created_at,
+              navigation.older_created_at
+       FROM posts AS p
+       CROSS JOIN navigation
+       WHERE p.deleted_at IS NULL
+         AND p.created_at >= ?
+         AND p.created_at < ?
+       ORDER BY p.created_at DESC, p.id DESC`,
+    )
+    .bind(endAt, startAt, startAt, endAt)
+    .all<DateDetailRow>();
 
-  const [postsResult, newerResult, olderResult] = results;
-  if (
-    postsResult === undefined ||
-    newerResult === undefined ||
-    olderResult === undefined
-  ) {
-    throw new Error("D1 did not return all date detail query results.");
-  }
-
-  const items = postsResult.results.map((row) => {
-    if (!("id" in row)) throw new Error("D1 returned an invalid post row.");
-    return toPost(row);
-  });
-  if (items.length === 0) {
+  const first = results[0];
+  if (first === undefined) {
     throw new ApiError(
       404,
       "DATE_NOT_FOUND",
@@ -221,149 +229,162 @@ export async function getDateDetail(
     );
   }
 
-  const newer = newerResult.results[0];
-  const older = olderResult.results[0];
-  if (newer !== undefined && !("created_at" in newer)) {
-    throw new Error("D1 returned an invalid newer-date row.");
-  }
-  if (older !== undefined && !("created_at" in older)) {
-    throw new Error("D1 returned an invalid older-date row.");
-  }
-
   return {
     date,
-    items,
+    items: results.map(toPost),
     navigation: {
-      newerDate: newer === undefined ? null : toShanghaiDate(newer.created_at),
-      olderDate: older === undefined ? null : toShanghaiDate(older.created_at),
+      newerDate:
+        first.newer_created_at === null
+          ? null
+          : toShanghaiDate(first.newer_created_at),
+      olderDate:
+        first.older_created_at === null
+          ? null
+          : toShanghaiDate(first.older_created_at),
     },
   };
-}
-
-export async function getMomentStatistics(
-  db: D1Database,
-): Promise<MomentStatistics> {
-  const result = await db
-    .prepare(
-      `SELECT date(created_at, '+8 hours') AS date, COUNT(*) AS count
-       FROM posts
-       WHERE deleted_at IS NULL
-       GROUP BY date(created_at, '+8 hours')
-       ORDER BY date ASC`,
-    )
-    .all<DailyMomentCountRow>();
-
-  const days = result.results.map((row) => ({
-    date: row.date,
-    count: row.count,
-  }));
-
-  let totalPosts = 0;
-  let peakDate: string | null = null;
-  let peakPosts = 0;
-  for (const day of days) {
-    totalPosts += day.count;
-    if (day.count > peakPosts) {
-      peakDate = day.date;
-      peakPosts = day.count;
-    }
-  }
-
-  return {
-    days,
-    summary: {
-      firstDate: days[0]?.date ?? null,
-      totalPosts,
-      activeDays: days.length,
-      peakDate,
-      peakPosts,
-    },
-  };
-}
-
-function getRandomIndex(length: number): number {
-  const range = 0x1_0000_0000;
-  const upperBound = range - (range % length);
-  const sample = new Uint32Array(1);
-  do {
-    crypto.getRandomValues(sample);
-  } while ((sample[0] ?? range) >= upperBound);
-  return (sample[0] ?? 0) % length;
 }
 
 export async function getRandomDateDetail(db: D1Database): Promise<DateDetail> {
-  const result = await db
-    .prepare(
-      `SELECT id, created_at
-       FROM posts
-       WHERE deleted_at IS NULL
-       ORDER BY id ASC`,
-    )
-    .all<IdCreatedAtRow>();
-
-  if (result.results.length === 0) {
-    throw new ApiError(404, "POST_NOT_FOUND", "There are no posts to pick.");
+  let results: RandomDateDetailRow[];
+  try {
+    ({ results } = await db
+      .prepare(
+        `WITH selected AS MATERIALIZED (
+         SELECT date(p.created_at, '+8 hours') AS selected_date,
+                strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  date(p.created_at, '+8 hours'),
+                  '-8 hours'
+                ) AS start_at,
+                strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  date(p.created_at, '+8 hours'),
+                  '+1 day',
+                  '-8 hours'
+                ) AS end_at
+         FROM public_post_slots AS slots
+         JOIN posts AS p ON p.id = slots.post_id
+         WHERE slots.slot = (
+           SELECT 1 + (
+             (random() & 9223372036854775807) % MAX(slot)
+           )
+           FROM public_post_slots
+         )
+       ),
+       navigation AS MATERIALIZED (
+         SELECT selected.*,
+                (SELECT created_at
+                 FROM posts
+                 WHERE deleted_at IS NULL
+                   AND created_at >= selected.end_at
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT 1) AS newer_created_at,
+                (SELECT created_at
+                 FROM posts
+                 WHERE deleted_at IS NULL
+                   AND created_at < selected.start_at
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1) AS older_created_at
+         FROM selected
+       )
+       SELECT ${qualifiedPostColumns},
+              navigation.selected_date,
+              navigation.newer_created_at,
+              navigation.older_created_at
+       FROM navigation
+       CROSS JOIN posts AS p INDEXED BY idx_posts_public_feed
+       WHERE p.deleted_at IS NULL
+         AND p.created_at >= navigation.start_at
+         AND p.created_at < navigation.end_at
+       ORDER BY p.created_at DESC, p.id DESC`,
+      )
+      .all<RandomDateDetailRow>());
+  } catch (error) {
+    if (!isMissingPublicPostSlotsError(error)) throw error;
+    return getLegacyRandomDateDetail(db);
   }
 
-  const selected = result.results[getRandomIndex(result.results.length)];
-  if (selected === undefined) {
-    throw new Error("Failed to select a random post.");
+  const first = results[0];
+  if (first === undefined) {
+    throw new ApiError(404, "POST_NOT_FOUND", "There are no posts to pick.");
+  }
+  return {
+    date: first.selected_date,
+    items: results.map(toPost),
+    navigation: {
+      newerDate:
+        first.newer_created_at === null
+          ? null
+          : toShanghaiDate(first.newer_created_at),
+      olderDate:
+        first.older_created_at === null
+          ? null
+          : toShanghaiDate(first.older_created_at),
+    },
+  };
+}
+
+function isMissingPublicPostSlotsError(error: unknown): boolean {
+  return /no such table:\s*(?:main\.)?public_post_slots/iu.test(String(error));
+}
+
+async function getLegacyRandomDateDetail(db: D1Database): Promise<DateDetail> {
+  const selected = await db
+    .prepare(
+      `WITH public_posts AS (
+         SELECT COUNT(*) AS count
+         FROM posts
+         WHERE deleted_at IS NULL
+       )
+       SELECT created_at
+       FROM posts
+       WHERE deleted_at IS NULL
+       LIMIT 1 OFFSET COALESCE(
+         (SELECT (random() & 9223372036854775807) % NULLIF(count, 0)
+          FROM public_posts),
+         0
+       )`,
+    )
+    .first<CreatedAtRow>();
+
+  if (selected === null) {
+    throw new ApiError(404, "POST_NOT_FOUND", "There are no posts to pick.");
   }
   return getDateDetail(db, toShanghaiDate(selected.created_at));
 }
 
-export async function getPost(db: D1Database, id: string): Promise<Post> {
+export async function getPostDetail(
+  db: D1Database,
+  id: string,
+): Promise<PostDetail> {
   const row = await db
     .prepare(
-      `SELECT ${postColumns}
-     FROM posts
-     WHERE id = ? AND deleted_at IS NULL`,
+      `SELECT ${qualifiedPostColumns},
+              (SELECT newer.id
+               FROM posts AS newer
+               WHERE newer.deleted_at IS NULL
+                 AND (newer.created_at, newer.id) > (p.created_at, p.id)
+               ORDER BY newer.created_at ASC, newer.id ASC
+               LIMIT 1) AS newer_id,
+              (SELECT older.id
+               FROM posts AS older
+               WHERE older.deleted_at IS NULL
+                 AND (older.created_at, older.id) < (p.created_at, p.id)
+               ORDER BY older.created_at DESC, older.id DESC
+               LIMIT 1) AS older_id
+       FROM posts AS p
+       WHERE p.id = ? AND p.deleted_at IS NULL`,
     )
     .bind(id)
-    .first<PostRow>();
+    .first<PostDetailRow>();
 
   if (row === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
   }
-  return toPost(row);
-}
-
-export async function getPostNavigation(
-  db: D1Database,
-  post: Post,
-): Promise<{ newerId: string | null; olderId: string | null }> {
-  const results = await db.batch<IdRow>([
-    db
-      .prepare(
-        `SELECT id
-       FROM posts
-       WHERE deleted_at IS NULL
-         AND (created_at > ? OR (created_at = ? AND id > ?))
-       ORDER BY created_at ASC, id ASC
-       LIMIT 1`,
-      )
-      .bind(post.createdAt, post.createdAt, post.id),
-    db
-      .prepare(
-        `SELECT id
-       FROM posts
-       WHERE deleted_at IS NULL
-         AND (created_at < ? OR (created_at = ? AND id < ?))
-       ORDER BY created_at DESC, id DESC
-       LIMIT 1`,
-      )
-      .bind(post.createdAt, post.createdAt, post.id),
-  ]);
-
-  const newer = results[0];
-  const older = results[1];
-  if (newer === undefined || older === undefined) {
-    throw new Error("D1 did not return both navigation query results.");
-  }
-
   return {
-    newerId: newer.results[0]?.id ?? null,
-    olderId: older.results[0]?.id ?? null,
+    post: toPost(row),
+    navigation: { newerId: row.newer_id, olderId: row.older_id },
   };
 }
 
@@ -374,13 +395,14 @@ export async function createPost(
 ): Promise<Post> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const imagesJson = JSON.stringify(images);
 
   await db
     .prepare(
       `INSERT INTO posts (id, content, images_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?)`,
     )
-    .bind(id, content, JSON.stringify(images), now, now)
+    .bind(id, content, imagesJson, now, now)
     .run();
 
   return {
@@ -400,98 +422,97 @@ export async function updatePost(
   images: string[],
 ): Promise<Post> {
   const updatedAt = new Date().toISOString();
-  const result = await db
+  const imagesJson = JSON.stringify(images);
+  const updated = await db
     .prepare(
       `UPDATE posts
-     SET content = ?, images_json = ?, updated_at = ?
-     WHERE id = ? AND deleted_at IS NULL`,
+       SET content = ?, images_json = ?, updated_at = ?
+       WHERE id = ? AND deleted_at IS NULL
+       RETURNING ${postColumns}`,
     )
-    .bind(content, JSON.stringify(images), updatedAt, id)
-    .run();
+    .bind(content, imagesJson, updatedAt, id)
+    .first<PostRow>();
 
-  if (result.meta.changes === 0) {
+  if (updated === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
   }
-  return getPost(db, id);
+  return toPost(updated);
 }
 
 export async function softDeletePost(
   db: D1Database,
   id: string,
 ): Promise<void> {
-  const result = await db
+  const deleted = await db
     .prepare(
       `UPDATE posts
-     SET deleted_at = ?
-     WHERE id = ? AND deleted_at IS NULL`,
+       SET deleted_at = ?
+       WHERE id = ? AND deleted_at IS NULL
+       RETURNING id`,
     )
     .bind(new Date().toISOString(), id)
-    .run();
+    .first<IdRow>();
 
-  if (result.meta.changes === 0) {
+  if (deleted === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
   }
 }
 
 export async function restorePost(db: D1Database, id: string): Promise<Post> {
-  const result = await db
+  const restored = await db
     .prepare(
       `UPDATE posts
-     SET deleted_at = NULL
-     WHERE id = ? AND deleted_at IS NOT NULL`,
+       SET deleted_at = NULL
+       WHERE id = ? AND deleted_at IS NOT NULL
+       RETURNING ${postColumns}`,
     )
     .bind(id)
-    .run();
+    .first<PostRow>();
 
-  if (result.meta.changes === 0) {
-    const existing = await db
-      .prepare("SELECT deleted_at FROM posts WHERE id = ?")
-      .bind(id)
-      .first<{ deleted_at: string | null }>();
-    if (existing === null) {
-      throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
-    }
-    throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
+  if (restored === null) {
+    return throwPostStateError(db, id);
   }
-  return getPost(db, id);
+  return toPost(restored);
 }
 
-export async function getDeletedPost(
+export async function getDeletedPostImages(
   db: D1Database,
   id: string,
-): Promise<DeletedPost> {
-  const deleted = await db
+): Promise<string[]> {
+  const row = await db
     .prepare(
-      `SELECT ${postColumns}, deleted_at
+      `SELECT images_json, deleted_at
        FROM posts
-       WHERE id = ? AND deleted_at IS NOT NULL`,
+       WHERE id = ?`,
     )
     .bind(id)
-    .first<DeletedPostRow>();
+    .first<DeletedPostImagesRow>();
 
-  if (deleted !== null) return toDeletedPost(deleted);
-
-  const existing = await db
-    .prepare("SELECT id FROM posts WHERE id = ?")
-    .bind(id)
-    .first<IdRow>();
-  if (existing === null) {
+  if (row === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
   }
-  throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
+  if (row.deleted_at === null) {
+    throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
+  }
+  return parseImages(row.images_json);
 }
 
 export async function permanentlyDeletePost(
   db: D1Database,
   id: string,
 ): Promise<void> {
-  const result = await db
-    .prepare("DELETE FROM posts WHERE id = ? AND deleted_at IS NOT NULL")
+  const deleted = await db
+    .prepare(
+      "DELETE FROM posts WHERE id = ? AND deleted_at IS NOT NULL RETURNING id",
+    )
     .bind(id)
-    .run();
+    .first<IdRow>();
 
-  if (result.meta.changes > 0) return;
+  if (deleted !== null) return;
+  return throwPostStateError(db, id);
+}
 
+async function throwPostStateError(db: D1Database, id: string): Promise<never> {
   const existing = await db
     .prepare("SELECT deleted_at FROM posts WHERE id = ?")
     .bind(id)

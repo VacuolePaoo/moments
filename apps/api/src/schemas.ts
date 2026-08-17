@@ -23,10 +23,33 @@ export const PostSchema = z
 
 export type Post = z.infer<typeof PostSchema>;
 
+export const ShanghaiDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isValidShanghaiDate, "Invalid Asia/Shanghai calendar date.")
+  .openapi({
+    description: "Calendar date in the fixed Asia/Shanghai time zone.",
+    example: "2026-08-07",
+  });
+
 export const PostListSchema = z
   .object({
     items: z.array(PostSchema),
     nextCursor: z.string().nullable(),
+    date: ShanghaiDateSchema.optional().openapi({
+      description:
+        "Present only in date mode (?date=...): the requested Asia/Shanghai date.",
+    }),
+    navigation: z
+      .object({
+        newerDate: ShanghaiDateSchema.nullable(),
+        olderDate: ShanghaiDateSchema.nullable(),
+      })
+      .optional()
+      .openapi({
+        description:
+          "Present only in date mode (?date=...): adjacent dates that have posts.",
+      }),
   })
   .openapi("PostList");
 
@@ -47,15 +70,6 @@ export const DeletedPostListSchema = z
 
 export type DeletedPostList = z.infer<typeof DeletedPostListSchema>;
 
-export const ShanghaiDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine(isValidShanghaiDate, "Invalid Asia/Shanghai calendar date.")
-  .openapi({
-    description: "Calendar date in the fixed Asia/Shanghai time zone.",
-    example: "2026-08-07",
-  });
-
 export const PostDetailSchema = z
   .object({
     post: PostSchema,
@@ -66,18 +80,7 @@ export const PostDetailSchema = z
   })
   .openapi("PostDetail");
 
-export const DateDetailSchema = z
-  .object({
-    date: ShanghaiDateSchema,
-    items: z.array(PostSchema),
-    navigation: z.object({
-      newerDate: ShanghaiDateSchema.nullable(),
-      olderDate: ShanghaiDateSchema.nullable(),
-    }),
-  })
-  .openapi("DateDetail");
-
-export type DateDetail = z.infer<typeof DateDetailSchema>;
+export type PostDetail = z.infer<typeof PostDetailSchema>;
 
 export const DailyMomentCountSchema = z
   .object({
@@ -86,16 +89,23 @@ export const DailyMomentCountSchema = z
   })
   .openapi("DailyMomentCount");
 
+export const NarrativeSegmentSchema = z
+  .object({
+    text: z.string(),
+    bold: z.boolean().default(false),
+  })
+  .openapi("NarrativeSegment");
+
+export const NarrativeParagraphSchema = z
+  .object({
+    segments: z.array(NarrativeSegmentSchema).min(1),
+  })
+  .openapi("NarrativeParagraph");
+
 export const MomentStatisticsSchema = z
   .object({
     days: z.array(DailyMomentCountSchema),
-    summary: z.object({
-      firstDate: ShanghaiDateSchema.nullable(),
-      totalPosts: z.number().int().nonnegative(),
-      activeDays: z.number().int().nonnegative(),
-      peakDate: ShanghaiDateSchema.nullable(),
-      peakPosts: z.number().int().nonnegative(),
-    }),
+    administratorNarrative: z.array(NarrativeParagraphSchema),
   })
   .openapi("MomentStatistics");
 
@@ -107,10 +117,14 @@ export const WritePostSchema = z
       description:
         "Plain text. Consecutive spaces, tabs and line breaks are normalized before storage.",
     }),
-    images: z.array(z.url()).default([]).openapi({
-      description:
-        "Ordered image URLs. Text or at least one image is required.",
-    }),
+    images: z
+      .array(z.url())
+      .max(18)
+      .default([])
+      .openapi({
+        description:
+          "Ordered image URLs, at most 18. Text or at least one image is required.",
+      }),
   })
   .refine(
     ({ content, images }) => content.trim().length > 0 || images.length > 0,

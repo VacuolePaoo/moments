@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
 
 import {
   CalendarHeatmap,
@@ -10,16 +11,25 @@ import {
 } from "@/components/heatmap/calendar-heatmap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "@/components/ui/toast";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { getMomentStatistics, retryRead, type MomentStatistics } from "./api";
+import {
+  getMomentStatistics,
+  rebuildStatistics,
+  retryRead,
+  type MomentStatistics,
+} from "./api";
+import { useAdminAccess } from "./auth-controls";
 import { MomentsShell } from "./moments-shell";
 import { PageTitle } from "./page-title";
+import { TextContent } from "./text-content";
 
 const heatmapLabels = {
   months: [
@@ -66,9 +76,11 @@ function activityForYear(
 }
 
 export function MomentsStatistics() {
+  const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
   const [statistics, setStatistics] = useState<MomentStatistics | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRebuilding, setIsRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -88,6 +100,28 @@ export function MomentsStatistics() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  const rebuild = useCallback(async () => {
+    const token = await getToken();
+    if (!token || isRebuilding) return;
+    setIsRebuilding(true);
+    try {
+      const value = await rebuildStatistics(token);
+      setStatistics(value);
+      setError(null);
+      toast.add({ type: "success", description: "统计数据已重新计算。" });
+    } catch (rebuildError) {
+      toast.add({
+        type: "error",
+        description:
+          rebuildError instanceof Error
+            ? rebuildError.message
+            : "统计重建失败，请稍后重试。",
+      });
+    } finally {
+      setIsRebuilding(false);
+    }
+  }, [getToken, isRebuilding]);
+
   const years = useMemo(
     () =>
       statistics
@@ -103,11 +137,34 @@ export function MomentsStatistics() {
 
   return (
     <MomentsShell>
-      <PageTitle>统计信息</PageTitle>
+      <div className="mb-12 flex items-center justify-between gap-4">
+        <PageTitle className="mb-0">统计信息</PageTitle>
+        {isAdmin ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="重新计算统计数据"
+                  disabled={isRebuilding}
+                  onClick={() => {
+                    void rebuild();
+                  }}
+                />
+              }
+            >
+              {isRebuilding ? <Spinner /> : <RefreshCwIcon />}
+            </TooltipTrigger>
+            <TooltipContent>重新计算统计数据</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
 
-      {isLoading ? <StatisticsSkeleton /> : null}
+      {isLoading || isCheckingAdmin ? <StatisticsSkeleton /> : null}
 
-      {!isLoading && error ? (
+      {!isLoading && !isCheckingAdmin && error ? (
         <div className="flex items-center gap-3" role="alert">
           <p className="text-base leading-6 text-muted-foreground">{error}</p>
           <Button
@@ -124,13 +181,20 @@ export function MomentsStatistics() {
         </div>
       ) : null}
 
-      {!isLoading && !error && statistics?.days.length === 0 ? (
+      {!isLoading &&
+      !isCheckingAdmin &&
+      !error &&
+      statistics?.days.length === 0 ? (
         <p className="text-base leading-6 text-muted-foreground">
           还没有可统计的内容
         </p>
       ) : null}
 
-      {!isLoading && !error && statistics && activeYear !== null ? (
+      {!isLoading &&
+      !isCheckingAdmin &&
+      !error &&
+      statistics &&
+      activeYear !== null ? (
         <div className="flex flex-col gap-10">
           <Tabs
             value={String(activeYear)}
@@ -181,26 +245,15 @@ export function MomentsStatistics() {
             ))}
           </Tabs>
 
-          <StatisticsSummary statistics={statistics} />
+          {isAdmin ? (
+            <TextContent
+              paragraphs={statistics.administratorNarrative}
+              lineHeight="relaxed"
+            />
+          ) : null}
         </div>
       ) : null}
     </MomentsShell>
-  );
-}
-
-function StatisticsSummary({ statistics }: { statistics: MomentStatistics }) {
-  const { summary } = statistics;
-  if (!summary.firstDate || !summary.peakDate) return null;
-
-  return (
-    <p className="leading-6">
-      自<strong>{formatShortDate(summary.firstDate)}</strong>以来，你一共发布了
-      <strong>{summary.totalPosts}</strong>篇 moment，记录了
-      <strong>{summary.activeDays}</strong>天生活。
-      <br />
-      发布内容最多的是<strong>{formatShortDate(summary.peakDate)}</strong>
-      ，这一天，你一共发布了<strong>{summary.peakPosts}</strong>篇 moment。
-    </p>
   );
 }
 

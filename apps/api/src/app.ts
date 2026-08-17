@@ -2,6 +2,8 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import type { MiddlewareHandler } from "hono";
 
 import {
+  administratorUserId,
+  requireAdministrator,
   requireAdministratorForMethods,
   requireAuthentication,
   verifyClerkSession,
@@ -9,10 +11,8 @@ import {
 import {
   createPost,
   getDateDetail,
-  getDeletedPost,
-  getPost,
-  getPostNavigation,
-  getMomentStatistics,
+  getDeletedPostImages,
+  getPostDetail,
   getRandomDateDetail,
   listDeletedPosts,
   listPosts,
@@ -21,13 +21,17 @@ import {
   softDeletePost,
   updatePost,
 } from "./db/posts";
+import {
+  getMomentStatistics,
+  rebuildStatisticsAggregates,
+} from "./db/statistics";
 import { normalizeContent } from "./lib/content";
+import { InvalidCursorError } from "./lib/cursor";
 import { ApiError, errorBody, errorResponse } from "./lib/errors";
 import { openApiConfig } from "./openapi";
 import { deleteImgBedImages } from "./services/imgbed";
 import {
   AuthStatusSchema,
-  DateDetailSchema,
   DeletedPostListSchema,
   ErrorSchema,
   HealthSchema,
@@ -50,6 +54,32 @@ const errorResponseDefinition = (description: string) => ({
   content: jsonContent(ErrorSchema),
 });
 
+function normalizePostInput(input: { content: string; images: string[] }): {
+  content: string;
+  images: string[];
+} {
+  const content = normalizeContent(input.content);
+  if (content.length === 0 && input.images.length === 0) {
+    throw new ApiError(
+      422,
+      "EMPTY_POST",
+      "Post text or at least one image is required.",
+    );
+  }
+  return { content, images: input.images };
+}
+
+async function withCursorError<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof InvalidCursorError) {
+      throw new ApiError(400, "INVALID_CURSOR", error.message);
+    }
+    throw error;
+  }
+}
+
 const securityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("requestId", crypto.randomUUID());
   await next();
@@ -66,7 +96,9 @@ const corsAndOriginGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
     ?.toUpperCase();
   const path = c.req.path;
   const isPrivateRead =
-    path === "/api/v1/auth/me" || path.startsWith("/api/v1/trash");
+    path === "/api/v1/auth/me" ||
+    path === "/api/v1/trash" ||
+    path.startsWith("/api/v1/trash/");
   const isPublicRead = c.req.method === "GET" && !isPrivateRead;
 
   if (c.req.method === "OPTIONS") {
@@ -117,43 +149,30 @@ const listPostsRoute = createRoute({
   path: "/api/v1/posts",
   operationId: "listPosts",
   tags: ["Posts"],
-  summary: "List posts",
+  summary: "List posts, or return every post of one Asia/Shanghai date",
   request: {
     query: z.object({
       limit: z.coerce.number().int().min(1).max(100).default(20),
       cursor: z.string().min(1).optional(),
       anchorDate: ShanghaiDateSchema.optional().openapi({
         description:
-          "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor.",
+          "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor and date.",
+      }),
+      date: ShanghaiDateSchema.optional().openapi({
+        description:
+          "Return every post of this Asia/Shanghai date plus adjacent-date navigation, ignoring limit. Mutually exclusive with cursor and anchorDate.",
       }),
     }),
   },
   responses: {
     200: {
-      description: "A newest-first cursor page.",
+      description:
+        "A newest-first cursor page, or a full day with navigation in date mode.",
       content: jsonContent(PostListSchema),
     },
     400: errorResponseDefinition("Invalid pagination cursor."),
-    422: errorResponseDefinition("Invalid query parameters."),
-    500: errorResponseDefinition("Unexpected server error."),
-  },
-});
-
-const getDateRoute = createRoute({
-  method: "get",
-  path: "/api/v1/dates/{date}",
-  operationId: "getDateDetail",
-  tags: ["Dates"],
-  summary:
-    "Get all posts and adjacent dates for an Asia/Shanghai calendar date",
-  request: { params: z.object({ date: ShanghaiDateSchema }) },
-  responses: {
-    200: {
-      description: "Date detail and navigation.",
-      content: jsonContent(DateDetailSchema),
-    },
     404: errorResponseDefinition("The requested date has no posts."),
-    422: errorResponseDefinition("Invalid calendar date."),
+    422: errorResponseDefinition("Invalid query parameters."),
     500: errorResponseDefinition("Unexpected server error."),
   },
 });
@@ -163,13 +182,33 @@ const getStatisticsRoute = createRoute({
   path: "/api/v1/statistics",
   operationId: "getMomentStatistics",
   tags: ["Statistics"],
-  summary: "Get daily post counts and lifetime statistics",
+  summary: "Get daily post counts and a rendered administrator narrative",
   responses: {
     200: {
-      description: "Daily counts and summary statistics in Asia/Shanghai.",
+      description:
+        "Daily counts and a structured administrator narrative computed in Asia/Shanghai.",
       content: jsonContent(MomentStatisticsSchema),
     },
     500: errorResponseDefinition("Unexpected server error."),
+  },
+});
+
+const rebuildStatisticsRoute = createRoute({
+  method: "post",
+  path: "/api/v1/statistics/rebuild",
+  operationId: "rebuildMomentStatistics",
+  tags: ["Statistics"],
+  summary: "Recompute statistics aggregates from the posts table",
+  security: [{ ClerkBearer: [] }],
+  responses: {
+    200: {
+      description: "Fresh statistics after the rebuild.",
+      content: jsonContent(MomentStatisticsSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Authentication is not configured."),
   },
 });
 
@@ -182,7 +221,7 @@ const getRandomDateRoute = createRoute({
   responses: {
     200: {
       description: "The randomly selected Asia/Shanghai date and its posts.",
-      content: jsonContent(DateDetailSchema),
+      content: jsonContent(PostListSchema),
     },
     404: errorResponseDefinition("There are no posts to pick."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -399,6 +438,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("*", corsAndOriginGuard);
 
   const authenticate = requireAuthentication(tokenVerifier);
+  const requireAdmin = requireAdministrator(tokenVerifier);
   app.use("/api/v1/auth/me", authenticate);
   app.use(
     "/api/v1/posts",
@@ -408,14 +448,9 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/v1/posts/*",
     requireAdministratorForMethods(tokenVerifier, ["PATCH", "DELETE", "POST"]),
   );
-  app.use(
-    "/api/v1/trash",
-    requireAdministratorForMethods(tokenVerifier, ["GET"]),
-  );
-  app.use(
-    "/api/v1/trash/*",
-    requireAdministratorForMethods(tokenVerifier, ["DELETE"]),
-  );
+  app.use("/api/v1/trash", requireAdmin);
+  app.use("/api/v1/trash/*", requireAdmin);
+  app.use("/api/v1/statistics/rebuild", requireAdmin);
 
   app.openapi(healthRoute, async (c) => {
     await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
@@ -430,71 +465,59 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(listPostsRoute, async (c) => {
-    const { limit, cursor, anchorDate } = c.req.valid("query");
-    if (cursor !== undefined && anchorDate !== undefined) {
+    const { limit, cursor, anchorDate, date } = c.req.valid("query");
+    if ([cursor, anchorDate, date].filter((value) => value !== undefined).length > 1) {
       throw new ApiError(
         422,
         "PAGINATION_CONFLICT",
-        "cursor and anchorDate cannot be used together.",
+        "cursor, anchorDate and date cannot be used together.",
       );
     }
-    try {
-      return c.json(await listPosts(c.env.DB, limit, cursor, anchorDate), 200);
-    } catch (error) {
-      if (error instanceof Error && error.name === "InvalidCursorError") {
-        throw new ApiError(400, "INVALID_CURSOR", error.message);
-      }
-      throw error;
+    if (date !== undefined) {
+      return c.json(
+        { ...(await getDateDetail(c.env.DB, date)), nextCursor: null },
+        200,
+      );
     }
+    return c.json(
+      await withCursorError(() =>
+        listPosts(c.env.DB, limit, cursor, anchorDate),
+      ),
+      200,
+    );
   });
 
   app.openapi(getStatisticsRoute, async (c) => {
     return c.json(await getMomentStatistics(c.env.DB), 200);
   });
 
-  app.openapi(getRandomDateRoute, async (c) => {
-    return c.json(await getRandomDateDetail(c.env.DB), 200);
+  app.openapi(rebuildStatisticsRoute, async (c) => {
+    return c.json(await rebuildStatisticsAggregates(c.env.DB), 200);
   });
 
-  app.openapi(getDateRoute, async (c) => {
+  app.openapi(getRandomDateRoute, async (c) => {
     return c.json(
-      await getDateDetail(c.env.DB, c.req.valid("param").date),
+      { ...(await getRandomDateDetail(c.env.DB)), nextCursor: null },
       200,
     );
   });
 
   app.openapi(getPostRoute, async (c) => {
-    const { id } = c.req.valid("param");
-    const post = await getPost(c.env.DB, id);
-    const navigation = await getPostNavigation(c.env.DB, post);
-    return c.json({ post, navigation }, 200);
+    return c.json(await getPostDetail(c.env.DB, c.req.valid("param").id), 200);
   });
 
   app.openapi(createPostRoute, async (c) => {
-    const input = c.req.valid("json");
-    const content = normalizeContent(input.content);
-    if (content.length === 0 && input.images.length === 0) {
-      throw new ApiError(
-        422,
-        "EMPTY_POST",
-        "Post text or at least one image is required.",
-      );
-    }
-    return c.json(await createPost(c.env.DB, content, input.images), 201);
+    const input = normalizePostInput(c.req.valid("json"));
+    return c.json(await createPost(c.env.DB, input.content, input.images), 201);
   });
 
   app.openapi(updatePostRoute, async (c) => {
     const { id } = c.req.valid("param");
-    const input = c.req.valid("json");
-    const content = normalizeContent(input.content);
-    if (content.length === 0 && input.images.length === 0) {
-      throw new ApiError(
-        422,
-        "EMPTY_POST",
-        "Post text or at least one image is required.",
-      );
-    }
-    return c.json(await updatePost(c.env.DB, id, content, input.images), 200);
+    const input = normalizePostInput(c.req.valid("json"));
+    return c.json(
+      await updatePost(c.env.DB, id, input.content, input.images),
+      200,
+    );
   });
 
   app.openapi(deletePostRoute, async (c) => {
@@ -508,39 +531,26 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.openapi(listTrashRoute, async (c) => {
     const { limit, cursor } = c.req.valid("query");
-    try {
-      return c.json(await listDeletedPosts(c.env.DB, limit, cursor), 200);
-    } catch (error) {
-      if (error instanceof Error && error.name === "InvalidCursorError") {
-        throw new ApiError(400, "INVALID_CURSOR", error.message);
-      }
-      throw error;
-    }
+    return c.json(
+      await withCursorError(() => listDeletedPosts(c.env.DB, limit, cursor)),
+      200,
+    );
   });
 
   app.openapi(permanentlyDeletePostRoute, async (c) => {
     const { id } = c.req.valid("param");
-    const post = await getDeletedPost(c.env.DB, id);
-    await imageDeleter(post.images, c.env);
+    const images = await getDeletedPostImages(c.env.DB, id);
+    await imageDeleter(images, c.env);
     await permanentlyDeletePost(c.env.DB, id);
     return c.body(null, 204);
   });
 
   app.openapi(authStatusRoute, (c) => {
-    if (
-      typeof c.env.ADMIN_CLERK_USER_ID !== "string" ||
-      c.env.ADMIN_CLERK_USER_ID.length === 0
-    ) {
-      throw new ApiError(
-        503,
-        "AUTH_NOT_CONFIGURED",
-        "Administrator access is not configured.",
-      );
-    }
+    const adminUserId = administratorUserId(c.env);
     return c.json(
       {
         authenticated: true as const,
-        isAdmin: c.get("authenticatedUserId") === c.env.ADMIN_CLERK_USER_ID,
+        isAdmin: c.get("authenticatedUserId") === adminUserId,
       },
       200,
     );

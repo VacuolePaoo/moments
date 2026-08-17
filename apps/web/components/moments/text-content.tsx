@@ -1,6 +1,10 @@
 const URL_PATTERN = /https?:\/\/[^\s]+/giu;
 const TRAILING_PUNCTUATION = /[.,!?;:，。！？；：)\]}]+$/u;
 
+export interface RichTextParagraph {
+  segments: Array<{ text: string; bold: boolean }>;
+}
+
 function linkify(content: string, paragraphIndex: number) {
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
@@ -32,17 +36,42 @@ function linkify(content: string, paragraphIndex: number) {
   return nodes;
 }
 
-export function TextContent({ content }: { content: string }) {
-  const paragraphs = content.split(/\r\n|\r|\n/u);
+export function TextContent({
+  content,
+  paragraphs: richParagraphs,
+  lineHeight = "normal",
+}: {
+  content?: string;
+  paragraphs?: RichTextParagraph[];
+  lineHeight?: "normal" | "relaxed";
+}) {
+  const paragraphs =
+    richParagraphs ??
+    (content ?? "").split(/\r\n|\r|\n/u).map((text) => ({
+      segments: [{ text, bold: false }],
+    }));
 
   return (
     <div className="flex flex-col gap-[0.4em]">
       {paragraphs.map((paragraph, index) => (
         <p
           key={index}
-          className="break-words whitespace-pre-wrap text-base leading-[1.6]"
+          className={`break-words whitespace-pre-wrap text-base ${
+            lineHeight === "relaxed" ? "leading-[2]" : "leading-[1.6]"
+          }`}
         >
-          {paragraph ? linkify(paragraph, index) : "\u00a0"}
+          {paragraph.segments.length > 0
+            ? paragraph.segments.map((segment, segmentIndex) => {
+                const value = segment.text
+                  ? linkify(segment.text, index * 1000 + segmentIndex)
+                  : "\u00a0";
+                return segment.bold ? (
+                  <strong key={segmentIndex}>{value}</strong>
+                ) : (
+                  <span key={segmentIndex}>{value}</span>
+                );
+              })
+            : "\u00a0"}
         </p>
       ))}
     </div>
