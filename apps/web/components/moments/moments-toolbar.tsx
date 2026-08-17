@@ -1,11 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType, type SVGProps } from "react";
 import {
   CalendarDaysIcon,
   DicesIcon,
   HouseIcon,
+  PlusIcon,
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -71,11 +72,24 @@ function ToolbarButton({
 
 export function MomentsToolbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAdmin, isCheckingAdmin } = useAdminAccess();
   const [randomOpen, setRandomOpen] = useState(false);
   const [randomDetail, setRandomDetail] = useState<DateDetail | null>(null);
   const [isRandomLoading, setIsRandomLoading] = useState(false);
-  const openHome = () => router.push("/");
+  const isHome = pathname === "/";
+  const openHome = () => {
+    if (!isHome) {
+      router.push("/");
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLTextAreaElement>("#moment-composer")
+        ?.focus({ preventScroll: true });
+    });
+  };
   const openStatistics = () => router.push("/statistics");
   const openTrash = () => router.push("/trash");
 
@@ -111,7 +125,11 @@ export function MomentsToolbar() {
               aria-label="Moments 工具"
               className="[--radius:9999rem] rounded-full border bg-background p-1 shadow-sm"
             >
-              <ToolbarButton label="首页" icon={HouseIcon} onClick={openHome} />
+              <ToolbarButton
+                label={isHome ? "新建内容" : "首页"}
+                icon={isHome ? PlusIcon : HouseIcon}
+                onClick={openHome}
+              />
               <ToolbarButton
                 label="统计信息"
                 icon={CalendarDaysIcon}

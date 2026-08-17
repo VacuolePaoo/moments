@@ -37,7 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { updatePost, type MomentPost } from "./api";
+import { MAX_IMAGES_PER_POST, updatePost, type MomentPost } from "./api";
 import { formatPostTime } from "./date";
 import { editDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
@@ -145,10 +145,18 @@ export function MomentItem({
     const selected = Array.from(event.target.files ?? []).filter((file) =>
       file.type.startsWith("image/"),
     );
-    if (selected.length > 0) {
+    const remaining = Math.max(0, MAX_IMAGES_PER_POST - images.length);
+    const accepted = selected.slice(0, remaining);
+    if (accepted.length < selected.length) {
+      toast.add({
+        type: "warning",
+        description: `每条说说最多添加 ${MAX_IMAGES_PER_POST} 张图片。`,
+      });
+    }
+    if (accepted.length > 0) {
       setImages((current) => [
         ...current,
-        ...editableImagesFromFiles(selected),
+        ...editableImagesFromFiles(accepted),
       ]);
     }
     event.target.value = "";
