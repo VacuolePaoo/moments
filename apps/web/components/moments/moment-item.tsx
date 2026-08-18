@@ -62,10 +62,66 @@ interface MomentItemProps {
   onDelete: (post: MomentPost) => void;
 }
 
+interface MomentReadOnlyProps {
+  post: MomentPost;
+  showTime?: boolean;
+  showEdited?: boolean;
+  eagerImages?: boolean;
+}
+
 function hasImageChanges(images: EditableImage[], original: string[]) {
   return (
     images.length !== original.length ||
     images.some((image, index) => image.url !== original[index])
+  );
+}
+
+function MomentTime({ post }: { post: MomentPost }) {
+  return (
+    <time
+      dateTime={post.createdAt}
+      className="block text-base leading-[1.6] text-muted-foreground"
+    >
+      {formatPostTime(post.createdAt)}
+    </time>
+  );
+}
+
+function MomentBody({
+  post,
+  eagerImages = false,
+}: {
+  post: MomentPost;
+  eagerImages?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <MomentImages images={post.images} eager={eagerImages} />
+      {post.content ? <TextContent content={post.content} /> : null}
+    </div>
+  );
+}
+
+function EditedLabel() {
+  return <p className="mt-2 text-sm text-muted-foreground">已编辑</p>;
+}
+
+export function MomentReadOnly({
+  post,
+  showTime = false,
+  showEdited = false,
+  eagerImages = false,
+}: MomentReadOnlyProps) {
+  return (
+    <article className="relative min-w-0">
+      {showTime ? (
+        <div className="mb-2 flex min-h-8 items-center gap-4">
+          <MomentTime post={post} />
+        </div>
+      ) : null}
+      <MomentBody post={post} eagerImages={eagerImages} />
+      {showEdited && post.edited ? <EditedLabel /> : null}
+    </article>
   );
 }
 
@@ -240,12 +296,7 @@ export function MomentItem({
       <TransitionPresence show={showMetaRow} animateOnMount={false} collapse>
         <div className="mb-2 flex min-h-8 items-center gap-4">
           <TransitionPresence show={showTime} animateOnMount={false}>
-            <time
-              dateTime={post.createdAt}
-              className="block text-base leading-[1.6] text-muted-foreground"
-            >
-              {formatPostTime(post.createdAt)}
-            </time>
+            <MomentTime post={post} />
           </TransitionPresence>
 
           <TransitionPresence
@@ -368,13 +419,8 @@ export function MomentItem({
         </form>
       ) : (
         <div>
-          <div className="flex flex-col gap-4">
-            <MomentImages images={post.images} eager={eagerImages} />
-            {post.content ? <TextContent content={post.content} /> : null}
-          </div>
-          {showEdited && post.edited ? (
-            <p className="mt-2 text-sm text-muted-foreground">已编辑</p>
-          ) : null}
+          <MomentBody post={post} eagerImages={eagerImages} />
+          {showEdited && post.edited ? <EditedLabel /> : null}
         </div>
       )}
 

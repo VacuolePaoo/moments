@@ -78,6 +78,7 @@ export function MomentsToolbar() {
   const [randomDetail, setRandomDetail] = useState<DateDetail | null>(null);
   const [isRandomLoading, setIsRandomLoading] = useState(false);
   const isHome = pathname === "/";
+  const isCreateAction = isAdmin && isHome;
   const openHome = () => {
     if (!isHome) {
       router.push("/");
@@ -126,15 +127,17 @@ export function MomentsToolbar() {
               className="[--radius:9999rem] rounded-full border bg-background p-1 shadow-sm"
             >
               <ToolbarButton
-                label={isHome ? "新建内容" : "首页"}
-                icon={isHome ? PlusIcon : HouseIcon}
+                label={isCreateAction ? "新建内容" : "首页"}
+                icon={isCreateAction ? PlusIcon : HouseIcon}
                 onClick={openHome}
               />
-              <ToolbarButton
-                label="统计信息"
-                icon={CalendarDaysIcon}
-                onClick={openStatistics}
-              />
+              {isAdmin ? (
+                <ToolbarButton
+                  label="统计信息"
+                  icon={CalendarDaysIcon}
+                  onClick={openStatistics}
+                />
+              ) : null}
               <ToolbarButton
                 label={isRandomLoading ? "正在获取随机内容" : "随机"}
                 icon={DicesIcon}

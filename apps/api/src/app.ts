@@ -97,6 +97,7 @@ const corsAndOriginGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
   const path = c.req.path;
   const isPrivateRead =
     path === "/api/v1/auth/me" ||
+    path === "/api/v1/statistics" ||
     path === "/api/v1/trash" ||
     path.startsWith("/api/v1/trash/");
   const isPublicRead = c.req.method === "GET" && !isPrivateRead;
@@ -183,13 +184,17 @@ const getStatisticsRoute = createRoute({
   operationId: "getMomentStatistics",
   tags: ["Statistics"],
   summary: "Get daily post counts and a rendered administrator narrative",
+  security: [{ ClerkBearer: [] }],
   responses: {
     200: {
       description:
         "Daily counts and a structured administrator narrative computed in Asia/Shanghai.",
       content: jsonContent(MomentStatisticsSchema),
     },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
     500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Authentication is not configured."),
   },
 });
 
@@ -450,7 +455,8 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.use("/api/v1/trash", requireAdmin);
   app.use("/api/v1/trash/*", requireAdmin);
-  app.use("/api/v1/statistics/rebuild", requireAdmin);
+  app.use("/api/v1/statistics", requireAdmin);
+  app.use("/api/v1/statistics/*", requireAdmin);
 
   app.openapi(healthRoute, async (c) => {
     await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();

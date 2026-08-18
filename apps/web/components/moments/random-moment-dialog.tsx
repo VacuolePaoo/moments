@@ -1,7 +1,7 @@
 import { RefreshCwIcon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -15,8 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 import type { DateDetail } from "./api";
 import { formatDateHeading } from "./date";
-import { MomentImages } from "./image-attachments";
-import { TextContent } from "./text-content";
+import { MomentReadOnly } from "./moment-item";
 
 export function RandomMomentDialog({
   detail,
@@ -35,31 +34,27 @@ export function RandomMomentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="w-full gap-4 bg-transparent p-0 ring-0 sm:max-w-xl"
+        className="w-full gap-4 bg-transparent p-0 ring-0 sm:max-w-[640px]"
       >
-        <DialogTitle className="sr-only">随机 Moment</DialogTitle>
+        <DialogTitle className="text-[1.602rem] leading-[1.5] font-semibold">
+          {formatDateHeading(detail.date)}
+        </DialogTitle>
         <DialogDescription className="sr-only">
           随机展示一个日期及当天发布的全部 Moment。
         </DialogDescription>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-[1.602rem] leading-[1.5] font-semibold">
-              {formatDateHeading(detail.date)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="max-h-[min(60vh,32rem)] pr-3">
-              <div>
+        <Card className="py-0">
+          <CardContent className="px-0">
+            <ScrollArea className="h-[min(60dvh,32rem)]">
+              <div className="p-4">
                 {detail.items.map((post, index) => (
                   <div key={post.id}>
                     {index > 0 ? <Separator className="my-6" /> : null}
-                    <article className="flex min-w-0 flex-col gap-4">
-                      <MomentImages images={post.images} />
-                      {post.content ? (
-                        <TextContent content={post.content} />
-                      ) : null}
-                    </article>
+                    <MomentReadOnly
+                      post={post}
+                      showTime={detail.items.length > 1}
+                      eagerImages={index === 0}
+                    />
                   </div>
                 ))}
               </div>

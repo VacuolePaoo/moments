@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import {
   CalendarHeatmap,
@@ -76,6 +77,7 @@ function activityForYear(
 }
 
 export function MomentsStatistics() {
+  const router = useRouter();
   const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
   const [statistics, setStatistics] = useState<MomentStatistics | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
@@ -85,7 +87,9 @@ export function MomentsStatistics() {
 
   const load = useCallback(async () => {
     try {
-      const value = await retryRead(() => getMomentStatistics());
+      const token = await getToken();
+      if (!token) throw new Error("登录状态已失效。");
+      const value = await retryRead(() => getMomentStatistics(token));
       setStatistics(value);
       setError(null);
     } catch {
@@ -93,12 +97,17 @@ export function MomentsStatistics() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   useEffect(() => {
+    if (isCheckingAdmin) return;
+    if (!isAdmin) {
+      router.replace("/");
+      return;
+    }
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [isAdmin, isCheckingAdmin, load, router]);
 
   const rebuild = useCallback(async () => {
     const token = await getToken();
@@ -135,36 +144,42 @@ export function MomentsStatistics() {
   );
   const activeYear = selectedYear ?? years[0] ?? null;
 
+  if (!isAdmin) {
+    return (
+      <MomentsShell>
+        {isCheckingAdmin ? <StatisticsSkeleton /> : null}
+      </MomentsShell>
+    );
+  }
+
   return (
     <MomentsShell>
       <div className="mb-12 flex items-center justify-between gap-4">
         <PageTitle className="mb-0">统计信息</PageTitle>
-        {isAdmin ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="重新计算统计数据"
-                  disabled={isRebuilding}
-                  onClick={() => {
-                    void rebuild();
-                  }}
-                />
-              }
-            >
-              {isRebuilding ? <Spinner /> : <RefreshCwIcon />}
-            </TooltipTrigger>
-            <TooltipContent>重新计算统计数据</TooltipContent>
-          </Tooltip>
-        ) : null}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="重新计算统计数据"
+                disabled={isRebuilding}
+                onClick={() => {
+                  void rebuild();
+                }}
+              />
+            }
+          >
+            {isRebuilding ? <Spinner /> : <RefreshCwIcon />}
+          </TooltipTrigger>
+          <TooltipContent>重新计算统计数据</TooltipContent>
+        </Tooltip>
       </div>
 
-      {isLoading || isCheckingAdmin ? <StatisticsSkeleton /> : null}
+      {isLoading ? <StatisticsSkeleton /> : null}
 
-      {!isLoading && !isCheckingAdmin && error ? (
+      {!isLoading && error ? (
         <div className="flex items-center gap-3" role="alert">
           <p className="text-base leading-6 text-muted-foreground">{error}</p>
           <Button
@@ -181,20 +196,13 @@ export function MomentsStatistics() {
         </div>
       ) : null}
 
-      {!isLoading &&
-      !isCheckingAdmin &&
-      !error &&
-      statistics?.days.length === 0 ? (
+      {!isLoading && !error && statistics?.days.length === 0 ? (
         <p className="text-base leading-6 text-muted-foreground">
           还没有可统计的内容
         </p>
       ) : null}
 
-      {!isLoading &&
-      !isCheckingAdmin &&
-      !error &&
-      statistics &&
-      activeYear !== null ? (
+      {!isLoading && !error && statistics && activeYear !== null ? (
         <div className="flex flex-col gap-10">
           <Tabs
             value={String(activeYear)}
@@ -245,12 +253,10 @@ export function MomentsStatistics() {
             ))}
           </Tabs>
 
-          {isAdmin ? (
-            <TextContent
-              paragraphs={statistics.administratorNarrative}
-              lineHeight="relaxed"
-            />
-          ) : null}
+          <TextContent
+            paragraphs={statistics.administratorNarrative}
+            lineHeight="relaxed"
+          />
         </div>
       ) : null}
     </MomentsShell>

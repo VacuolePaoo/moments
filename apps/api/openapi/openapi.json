@@ -635,6 +635,11 @@
           "Statistics"
         ],
         "summary": "Get daily post counts and a rendered administrator narrative",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Daily counts and a structured administrator narrative computed in Asia/Shanghai.",
@@ -646,8 +651,38 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured.",
             "content": {
               "application/json": {
                 "schema": {

@@ -663,6 +663,11 @@
           "统计"
         ],
         "summary": "获取每日发布数量与管理员统计文案",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "按亚洲/上海时区计算的每日数量和结构化管理员统计文案。",
@@ -674,8 +679,38 @@
               }
             }
           },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "500": {
             "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份认证尚未配置。",
             "content": {
               "application/json": {
                 "schema": {

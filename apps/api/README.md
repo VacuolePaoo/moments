@@ -32,7 +32,7 @@ v2 (breaking) changes:
 
 ## Statistics aggregates
 
-After `migrations/0004_derived_data_triggers.sql` is applied, `GET /api/v1/statistics` never scans `posts`. Its normal path reads three small tables created by `migrations/0003_statistics_aggregates.sql` in one statement:
+After `migrations/0004_derived_data_triggers.sql` is applied, the administrator-only `GET /api/v1/statistics` never scans `posts`. Its normal path reads three small tables created by `migrations/0003_statistics_aggregates.sql` in one statement:
 
 - `statistics_daily` — per Asia/Shanghai date: post count, character count, longest post, image count.
 - `statistics_hourly` — post count per hour of day (0–23).
@@ -57,9 +57,9 @@ All API responses use `Cache-Control: no-store`. Cloudflare Cache API entries ar
 
 ## Rate limiting (dashboard)
 
-Public read endpoints (`/api/v1/posts`, `/api/v1/random`, `/api/v1/statistics`) are unauthenticated and should be rate limited at the edge. In the Cloudflare dashboard open **Security → WAF → Rate limiting rules** and create a rule for your Worker zone:
+Public read endpoints (`/api/v1/posts`, `/api/v1/random`) are unauthenticated and should be rate limited at the edge. In the Cloudflare dashboard open **Security → WAF → Rate limiting rules** and create a rule for your Worker zone:
 
-- Field: URI Path, Operator: equals, Value: `/api/v1/posts` (add further rules for `/api/v1/random` and `/api/v1/statistics`, or use a wildcard/regex such as `^/api/v1/(posts|random|statistics)` when available on your plan).
+- Field: URI Path, Operator: equals, Value: `/api/v1/posts` (add a further rule for `/api/v1/random`, or use a wildcard/regex such as `^/api/v1/(posts|random)` when available on your plan).
 - Requests: e.g. 60 per 1 minute, counting period 60 seconds.
 - Action: Managed Challenge (or Block).
 

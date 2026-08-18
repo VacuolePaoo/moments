@@ -397,7 +397,11 @@ describe("Moments API", () => {
       ),
     );
 
-    const response = await createApp().request("/api/v1/statistics", {}, env);
+    const response = await createApp({ tokenVerifier: adminVerifier }).request(
+      "/api/v1/statistics",
+      jsonRequest("GET"),
+      env,
+    );
     expect(response.status).toBe(200);
     const statistics = await response.json<{
       days: Array<{ date: string; count: number }>;
@@ -451,7 +455,11 @@ describe("Moments API", () => {
     const first = await firstResponse.json<{ id: string }>();
 
     // Without the version marker, reads aggregate posts directly and stay fresh.
-    const initial = await createApp().request("/api/v1/statistics", {}, env);
+    const initial = await app.request(
+      "/api/v1/statistics",
+      jsonRequest("GET"),
+      env,
+    );
     expect(initial.status).toBe(200);
     expect(await readDaily()).toEqual({
       post_count: 1,
@@ -516,7 +524,7 @@ describe("Moments API", () => {
     const [rebuilt, reread] = await Promise.all([
       rebuildResponse.json<{ days: Array<{ date: string; count: number }> }>(),
       (
-        await createApp().request("/api/v1/statistics", {}, env)
+        await app.request("/api/v1/statistics", jsonRequest("GET"), env)
       ).json<{ days: Array<{ date: string; count: number }> }>(),
     ]);
     expect(rebuilt.days).toEqual(reread.days);
@@ -604,18 +612,30 @@ describe("Moments API", () => {
     });
   });
 
-  it("protects statistics rebuild with administrator authentication", async () => {
-    const unauthenticated = await createApp().request(
+  it("protects statistics reads and rebuilds with administrator authentication", async () => {
+    const unauthenticatedRead = await createApp().request(
+      "/api/v1/statistics",
+      {},
+      env,
+    );
+    expect(unauthenticatedRead.status).toBe(401);
+
+    const forbiddenRead = await createApp({
+      tokenVerifier: nonAdminVerifier,
+    }).request("/api/v1/statistics", jsonRequest("GET"), env);
+    expect(forbiddenRead.status).toBe(403);
+
+    const unauthenticatedRebuild = await createApp().request(
       "/api/v1/statistics/rebuild",
       { method: "POST" },
       env,
     );
-    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticatedRebuild.status).toBe(401);
 
-    const forbidden = await createApp({
+    const forbiddenRebuild = await createApp({
       tokenVerifier: nonAdminVerifier,
     }).request("/api/v1/statistics/rebuild", jsonRequest("POST"), env);
-    expect(forbidden.status).toBe(403);
+    expect(forbiddenRebuild.status).toBe(403);
   });
 
   it("rejects posts with more than eighteen images", async () => {

@@ -179,9 +179,10 @@ export async function getDateDetail(
 }
 
 export function getMomentStatistics(
+  token: string,
   signal?: AbortSignal,
 ): Promise<MomentStatistics> {
-  return request<MomentStatistics>("/api/v1/statistics", { signal });
+  return request<MomentStatistics>("/api/v1/statistics", { token, signal });
 }
 
 export function rebuildStatistics(token: string): Promise<MomentStatistics> {
