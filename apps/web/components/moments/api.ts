@@ -7,7 +7,7 @@ export interface MomentPost {
   edited: boolean;
 }
 
-export interface DateNavigation {
+interface DateNavigation {
   newerDate: string | null;
   olderDate: string | null;
 }
@@ -118,7 +118,7 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-export function isRetryableReadError(error: unknown): boolean {
+function isRetryableReadError(error: unknown): boolean {
   return (
     error instanceof TypeError ||
     (error instanceof MomentsApiError &&
@@ -163,11 +163,7 @@ export function listPosts(
   });
 }
 
-export async function getDateDetail(
-  date: string,
-  signal?: AbortSignal,
-): Promise<DateDetail> {
-  const page = await listPosts({ date, signal });
+function dateDetailFromPage(page: PostList): DateDetail {
   if (page.date === undefined || page.navigation === undefined) {
     throw new MomentsApiError(
       500,
@@ -176,6 +172,14 @@ export async function getDateDetail(
     );
   }
   return { date: page.date, items: page.items, navigation: page.navigation };
+}
+
+export async function getDateDetail(
+  date: string,
+  signal?: AbortSignal,
+): Promise<DateDetail> {
+  const page = await listPosts({ date, signal });
+  return dateDetailFromPage(page);
 }
 
 export function getMomentStatistics(
@@ -196,14 +200,7 @@ export async function getRandomMomentDate(
   signal?: AbortSignal,
 ): Promise<DateDetail> {
   const page = await request<PostList>("/api/v1/random", { signal });
-  if (page.date === undefined || page.navigation === undefined) {
-    throw new MomentsApiError(
-      500,
-      "INVALID_RESPONSE",
-      "返回的日期数据不完整。",
-    );
-  }
-  return { date: page.date, items: page.items, navigation: page.navigation };
+  return dateDetailFromPage(page);
 }
 
 export function getAuthStatus(

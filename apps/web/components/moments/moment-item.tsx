@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   EllipsisIcon,
   ImagePlusIcon,
@@ -37,14 +37,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { MAX_IMAGES_PER_POST, updatePost, type MomentPost } from "./api";
+import { updatePost, type MomentPost } from "./api";
 import { formatPostTime } from "./date";
 import { editDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
   EditableImageAttachments,
   MomentImages,
-  editableImagesFromFiles,
   editableImagesFromUrls,
+  handleEditableImageSelection,
   releaseEditableImage,
   uploadEditableImages,
   type EditableImage,
@@ -197,27 +197,6 @@ export function MomentItem({
     if (!value) removeDraft(draftKey);
   }
 
-  function addImages(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files ?? []).filter((file) =>
-      file.type.startsWith("image/"),
-    );
-    const remaining = Math.max(0, MAX_IMAGES_PER_POST - images.length);
-    const accepted = selected.slice(0, remaining);
-    if (accepted.length < selected.length) {
-      toast.add({
-        type: "warning",
-        description: `每条说说最多添加 ${MAX_IMAGES_PER_POST} 张图片。`,
-      });
-    }
-    if (accepted.length > 0) {
-      setImages((current) => [
-        ...current,
-        ...editableImagesFromFiles(accepted),
-      ]);
-    }
-    event.target.value = "";
-  }
-
   function updateImage(id: string, values: Partial<EditableImage>) {
     setImages((current) =>
       current.map((image) =>
@@ -289,59 +268,55 @@ export function MomentItem({
   }
 
   const canSave = content.trim().length > 0 || images.length > 0;
-  const showMetaRow = showTime || (isAdmin && !isEditing);
-
   return (
     <article className="group/moment relative min-w-0">
-      <TransitionPresence show={showMetaRow} animateOnMount={false} collapse>
+      {showTime ? (
         <div className="mb-2 flex min-h-8 items-center gap-4">
-          <TransitionPresence show={showTime} animateOnMount={false}>
-            <MomentTime post={post} />
-          </TransitionPresence>
+          <MomentTime post={post} />
+        </div>
+      ) : null}
 
-          <TransitionPresence
-            show={isAdmin && !isEditing}
-            animateOnMount={false}
-            className="ml-auto shrink-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100"
-          >
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger
+      <TransitionPresence
+        show={isAdmin && !isEditing}
+        animateOnMount={false}
+        className="absolute top-0 right-0 z-10 shrink-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100"
+      >
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DropdownMenuTrigger
                   render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="更多操作"
-                        />
-                      }
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="更多操作"
                     />
                   }
-                >
-                  <EllipsisIcon />
-                </TooltipTrigger>
-                <TooltipContent>更多操作</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={beginEditing}>
-                    <PencilIcon />
-                    编辑
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => onDelete(post)}
-                  >
-                    <Trash2Icon />
-                    删除
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </TransitionPresence>
-        </div>
+                />
+              }
+            >
+              <EllipsisIcon />
+            </TooltipTrigger>
+            <TooltipContent>更多操作</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onClick={beginEditing}>
+                <PencilIcon />
+                编辑
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => onDelete(post)}
+              >
+                <Trash2Icon />
+                删除
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </TransitionPresence>
 
       {isEditing ? (
@@ -382,7 +357,14 @@ export function MomentItem({
               multiple
               className="sr-only"
               tabIndex={-1}
-              onChange={addImages}
+              onChange={(event) =>
+                handleEditableImageSelection(
+                  event,
+                  images.length,
+                  (accepted) =>
+                    setImages((current) => [...current, ...accepted]),
+                )
+              }
             />
             <Tooltip>
               <TooltipTrigger
@@ -418,7 +400,7 @@ export function MomentItem({
           </div>
         </form>
       ) : (
-        <div>
+        <div className={isAdmin ? "pr-10" : undefined}>
           <MomentBody post={post} eagerImages={eagerImages} />
           {showEdited && post.edited ? <EditedLabel /> : null}
         </div>

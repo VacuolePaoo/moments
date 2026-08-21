@@ -55,7 +55,7 @@ export const PostListSchema = z
 
 export type PostList = z.infer<typeof PostListSchema>;
 
-export const DeletedPostSchema = PostSchema.extend({
+const DeletedPostSchema = PostSchema.extend({
   deletedAt: z.iso.datetime({ offset: true }),
 }).openapi("DeletedPost");
 
@@ -82,21 +82,21 @@ export const PostDetailSchema = z
 
 export type PostDetail = z.infer<typeof PostDetailSchema>;
 
-export const DailyMomentCountSchema = z
+const DailyMomentCountSchema = z
   .object({
     date: ShanghaiDateSchema,
     count: z.number().int().nonnegative(),
   })
   .openapi("DailyMomentCount");
 
-export const NarrativeSegmentSchema = z
+const NarrativeSegmentSchema = z
   .object({
     text: z.string(),
     bold: z.boolean().default(false),
   })
   .openapi("NarrativeSegment");
 
-export const NarrativeParagraphSchema = z
+const NarrativeParagraphSchema = z
   .object({
     segments: z.array(NarrativeSegmentSchema).min(1),
   })
@@ -132,7 +132,7 @@ export const WritePostSchema = z
   )
   .openapi("WritePost");
 
-export const ErrorDetailSchema = z.object({
+const ErrorDetailSchema = z.object({
   path: z.string(),
   message: z.string(),
 });

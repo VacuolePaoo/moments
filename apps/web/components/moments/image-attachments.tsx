@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { XIcon } from "lucide-react";
+import type { ChangeEvent } from "react";
 
 import {
   Attachment,
@@ -14,11 +15,12 @@ import {
   AttachmentTitle,
   AttachmentTrigger,
 } from "@/components/ui/attachment";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
-import { uploadImage } from "./api";
+import { MAX_IMAGES_PER_POST, uploadImage } from "./api";
 
-export type ImageUploadState = "idle" | "uploading" | "error" | "done";
+type ImageUploadState = "idle" | "uploading" | "error" | "done";
 
 export interface EditableImage {
   id: string;
@@ -48,7 +50,7 @@ function formatFileSize(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function editableImagesFromFiles(files: File[]): EditableImage[] {
+function editableImagesFromFiles(files: File[]): EditableImage[] {
   return files.map((file) => ({
     id: crypto.randomUUID(),
     name: file.name,
@@ -56,6 +58,40 @@ export function editableImagesFromFiles(files: File[]): EditableImage[] {
     state: "idle",
     file,
   }));
+}
+
+function selectEditableImages(
+  files: Iterable<File>,
+  currentCount: number,
+): { accepted: EditableImage[]; truncated: boolean } {
+  const selected = Array.from(files).filter((file) =>
+    file.type.startsWith("image/"),
+  );
+  const remaining = Math.max(0, MAX_IMAGES_PER_POST - currentCount);
+  const accepted = selected.slice(0, remaining);
+  return {
+    accepted: editableImagesFromFiles(accepted),
+    truncated: accepted.length < selected.length,
+  };
+}
+
+export function handleEditableImageSelection(
+  event: ChangeEvent<HTMLInputElement>,
+  currentCount: number,
+  onAccepted: (images: EditableImage[]) => void,
+): void {
+  const { accepted, truncated } = selectEditableImages(
+    event.target.files ?? [],
+    currentCount,
+  );
+  if (truncated) {
+    toast.add({
+      type: "warning",
+      description: `每条说说最多添加 ${MAX_IMAGES_PER_POST} 张图片。`,
+    });
+  }
+  if (accepted.length > 0) onAccepted(accepted);
+  event.target.value = "";
 }
 
 export function editableImagesFromUrls(urls: string[]): EditableImage[] {

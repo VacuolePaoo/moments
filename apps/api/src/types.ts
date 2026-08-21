@@ -2,17 +2,15 @@ export type ImgBedBindings = Partial<
   Pick<Env, "CFBED_BASE_URL" | "CFBED_API_TOKEN">
 >;
 
-export type AppBindings = Env;
-
 export type AppEnv = {
-  Bindings: AppBindings;
+  Bindings: Env;
   Variables: {
     requestId: string;
     authenticatedUserId: string;
   };
 };
 
-export interface VerifiedSession {
+interface VerifiedSession {
   userId: string;
 }
 

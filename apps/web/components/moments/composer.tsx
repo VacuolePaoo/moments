@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
 } from "react";
 import { CornerDownLeftIcon, ImagePlusIcon } from "lucide-react";
 
@@ -20,11 +19,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { MAX_IMAGES_PER_POST, createPost, type MomentPost } from "./api";
+import { createPost, type MomentPost } from "./api";
 import { publishDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
   EditableImageAttachments,
-  editableImagesFromFiles,
+  handleEditableImageSelection,
   releaseEditableImage,
   uploadEditableImages,
   type EditableImage,
@@ -88,27 +87,6 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
       setContent(value);
       setDraftSaved(false);
       if (!value) removeDraft(draftKey);
-    }
-
-    function addImages(event: ChangeEvent<HTMLInputElement>) {
-      const selected = Array.from(event.target.files ?? []).filter((file) =>
-        file.type.startsWith("image/"),
-      );
-      const remaining = Math.max(0, MAX_IMAGES_PER_POST - images.length);
-      const accepted = selected.slice(0, remaining);
-      if (accepted.length < selected.length) {
-        toast.add({
-          type: "warning",
-          description: `每条说说最多添加 ${MAX_IMAGES_PER_POST} 张图片。`,
-        });
-      }
-      if (accepted.length > 0) {
-        setImages((current) => [
-          ...current,
-          ...editableImagesFromFiles(accepted),
-        ]);
-      }
-      event.target.value = "";
     }
 
     function removeImage(image: EditableImage) {
@@ -186,7 +164,11 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
             multiple
             className="sr-only"
             tabIndex={-1}
-            onChange={addImages}
+            onChange={(event) =>
+              handleEditableImageSelection(event, images.length, (accepted) =>
+                setImages((current) => [...current, ...accepted]),
+              )
+            }
           />
           <Tooltip>
             <TooltipTrigger
