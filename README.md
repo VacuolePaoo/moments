@@ -43,7 +43,7 @@
 | Root directory | `/`，即仓库根目录 |
 | Deploy command | `pnpm deploy:api` |
 
-首次部署会自动创建并绑定名为 `DB` 的 D1 数据库，然后执行 `apps/api/migrations` 中的全部迁移；不需要手动填写数据库名称或 ID。后续部署只会执行尚未应用的迁移。
+首次部署会自动创建名为 `moments-db` 的 D1 数据库，并将它绑定为 `DB`，然后执行 `apps/api/migrations` 中的全部迁移；不需要手动填写数据库 ID。后续部署只会执行尚未应用的迁移。
 
 从旧版本升级时也应使用完整的 `pnpm deploy:api`，不要只执行 `wrangler deploy`。当前版本需要应用统计聚合与 D1 Trigger 迁移；无需新增环境变量，也无需手工转换数据，迁移会回填统计数据和随机抽样槽位。
 

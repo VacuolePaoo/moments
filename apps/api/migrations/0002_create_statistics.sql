@@ -1,7 +1,5 @@
--- Incremental aggregates backing GET /api/v1/statistics.
--- Rebuilt from posts by POST /api/v1/statistics/rebuild (and lazily on first
--- read while statistics_meta is empty). Maintained incrementally by
--- create/update/soft-delete/restore so reads never scan the posts table.
+-- Materialized aggregates backing GET /api/v1/statistics.
+-- The posts triggers in migration 0004 maintain these tables atomically.
 
 CREATE TABLE statistics_daily (
   date TEXT PRIMARY KEY NOT NULL

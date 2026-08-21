@@ -1,6 +1,6 @@
 CREATE TABLE posts (
   id TEXT PRIMARY KEY NOT NULL,
-  content TEXT NOT NULL CHECK (length(trim(content)) > 0),
+  content TEXT NOT NULL,
   images_json TEXT NOT NULL DEFAULT '[]'
     CHECK (json_valid(images_json) AND json_type(images_json) = 'array'),
   created_at TEXT NOT NULL,
@@ -13,6 +13,5 @@ CREATE INDEX idx_posts_public_feed
   WHERE deleted_at IS NULL;
 
 CREATE INDEX idx_posts_deleted_at
-  ON posts (deleted_at DESC)
+  ON posts (deleted_at DESC, id DESC)
   WHERE deleted_at IS NOT NULL;
-

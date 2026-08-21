@@ -1,12 +1,5 @@
--- Keep statistics aggregates and the dense public-post sampling slots in sync
--- inside the same SQLite statement that mutates posts. This removes the
--- application-side read-before-write calls while preserving atomicity.
-
-CREATE TABLE public_post_slots (
-  slot INTEGER PRIMARY KEY NOT NULL CHECK (slot > 0),
-  post_id TEXT NOT NULL UNIQUE
-    REFERENCES posts (id) ON DELETE CASCADE
-);
+-- Keep statistics aggregates and dense public-post sampling slots in sync
+-- inside the same SQLite statement that mutates posts.
 
 -- Backfill every derived table before enabling incremental maintenance. This
 -- also repairs deployments where v2 writes occurred before the first rebuild.

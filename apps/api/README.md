@@ -32,7 +32,7 @@ v2 (breaking) changes:
 
 ## Statistics aggregates
 
-After `migrations/0004_derived_data_triggers.sql` is applied, the administrator-only `GET /api/v1/statistics` never scans `posts`. Its normal path reads three small tables created by `migrations/0003_statistics_aggregates.sql` in one statement:
+After `migrations/0004_derived_data_triggers.sql` is applied, the administrator-only `GET /api/v1/statistics` never scans `posts`. Its normal path reads three small tables created by `migrations/0002_create_statistics.sql` in one statement:
 
 - `statistics_daily` — per Asia/Shanghai date: post count, character count, longest post, image count.
 - `statistics_hourly` — post count per hour of day (0–23).
@@ -40,7 +40,7 @@ After `migrations/0004_derived_data_triggers.sql` is applied, the administrator-
 
 Every create, update, soft-delete and restore is now one post mutation. D1 triggers update the statistics in the same SQLite transaction, so direct SQL maintenance cannot bypass the aggregates and readers never observe a post without its matching statistics. All character and image counts use SQLite `length()`/`json_array_length()` in both the triggers and rebuild path. The longest-post query is only rerun when an edit or deletion may have removed the current maximum.
 
-The same migration creates `public_post_slots`, a dense `1..N` mapping maintained by triggers. `GET /api/v1/random` samples one primary-key slot and retrieves that date and its navigation in one query; it no longer performs `COUNT(*) + OFFSET` over `posts`. Date detail and navigation are likewise returned by one query.
+`migrations/0003_create_public_post_slots.sql` creates `public_post_slots`, a dense `1..N` mapping maintained by the triggers in migration 0004. `GET /api/v1/random` samples one primary-key slot and retrieves that date and its navigation in one query; it no longer performs `COUNT(*) + OFFSET` over `posts`. Date detail and navigation are likewise returned by one query.
 
 During the short Worker-first upgrade window, before migration 0004 exists, statistics fall back to a fresh direct aggregation from `posts` and random selection falls back to the legacy query. These paths are slower but never return stale data. Once the migration marker exists, they are not used.
 
@@ -67,7 +67,7 @@ Rules live in the dashboard, not in `wrangler.jsonc`.
 
 ## Upgrading an existing deployment to v2
 
-1. From the repository root run `pnpm deploy:api`. Keep the complete command intact: Wrangler deploys the compatibility-aware Worker, then applies pending migrations 0003 and 0004. Already applied migrations are skipped.
+1. From the repository root run `pnpm deploy:api`. Keep the complete command intact: Wrangler deploys the compatibility-aware Worker, then applies every pending migration. Already applied migrations are skipped.
 2. Deploy the web app (Vercel). The frontend now calls `GET /api/v1/posts?date=...` instead of `/api/v1/dates/...`, so deploy the Worker first to avoid a window of 404s.
 3. Optionally call the administrator-only rebuild endpoint once as a verification step. Migration 0004 already backfills the data, so this is not required for correctness.
 
@@ -77,10 +77,10 @@ Local development keeps its own D1 state under `.wrangler/state`. After pulling 
 
 ## Database
 
-The D1 binding is `DB`. The repository intentionally does not contain a D1
-database name or ID. The deployment script first lets Wrangler create and bind
-the database, then applies every pending migration to create or update its
-tables:
+The D1 binding is `DB`, and its canonical Cloudflare database name is
+`moments-db`. The repository intentionally omits the account-specific database
+ID. On the first deployment, Wrangler creates `moments-db` automatically and
+binds it as `DB`; the deployment script then applies every pending migration:
 
 ```bash
 # From the repository root
