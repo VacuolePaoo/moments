@@ -368,6 +368,21 @@
         },
         "additionalProperties": false
       },
+      "DeletePostImage": {
+        "type": "object",
+        "properties": {
+          "imageUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "要删除的托管图片完整 URL。",
+            "example": "https://file.example.com/file/moments/example.jpg"
+          }
+        },
+        "required": [
+          "imageUrl"
+        ],
+        "additionalProperties": false
+      },
       "DeletedPostList": {
         "type": "object",
         "properties": {
@@ -829,6 +844,37 @@
         }
       }
     },
+    "/rss.xml": {
+      "get": {
+        "operationId": "getRecentMomentsRss",
+        "tags": [
+          "内容"
+        ],
+        "summary": "获取最近 20 个亚洲/上海自然日的 RSS 2.0 订阅源",
+        "responses": {
+          "200": {
+            "description": "包含公开内容的 RSS 2.0 XML 文档。",
+            "content": {
+              "application/rss+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/posts/{id}": {
       "get": {
         "operationId": "getPostById",
@@ -969,6 +1015,16 @@
               }
             }
           },
+          "409": {
+            "description": "托管图片必须通过内容图片删除接口移除。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "请求无效。",
             "content": {
@@ -1082,6 +1138,126 @@
           },
           "503": {
             "description": "身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/images": {
+      "delete": {
+        "operationId": "deletePostImage",
+        "tags": [
+          "内容"
+        ],
+        "summary": "删除单张托管图片并从内容中移除其 URL",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "稳定的内容 UUID。",
+              "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+            },
+            "required": true,
+            "description": "稳定的内容 UUID。",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletePostImage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "托管图片已删除，内容图片列表已更新。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "内容或其所附图片不存在。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "删除该图片后内容将为空，无法执行删除。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管图片删除失败。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份认证或托管图片删除服务尚未配置。",
             "content": {
               "application/json": {
                 "schema": {

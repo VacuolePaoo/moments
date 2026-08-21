@@ -149,6 +149,25 @@ export async function listPosts(
   }));
 }
 
+export async function listPostsInWindow(
+  db: D1Database,
+  startAt: string,
+  endAt: string,
+): Promise<Post[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${postColumns}
+       FROM posts
+       WHERE deleted_at IS NULL
+         AND created_at >= ?
+         AND created_at < ?
+       ORDER BY created_at DESC, id DESC`,
+    )
+    .bind(startAt, endAt)
+    .all<PostRow>();
+  return results.map(toPost);
+}
+
 export async function listDeletedPosts(
   db: D1Database,
   limit: number,
@@ -428,11 +447,97 @@ export async function updatePost(
       `UPDATE posts
        SET content = ?, images_json = ?, updated_at = ?
        WHERE id = ? AND deleted_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM json_each(posts.images_json) AS existing_image
+           WHERE NOT EXISTS (
+             SELECT 1
+             FROM json_each(?) AS next_image
+             WHERE next_image.value = existing_image.value
+           )
+         )
        RETURNING ${postColumns}`,
     )
-    .bind(content, imagesJson, updatedAt, id)
+    .bind(content, imagesJson, updatedAt, id, imagesJson)
     .first<PostRow>();
 
+  if (updated === null) return throwPostUpdateError(db, id);
+  return toPost(updated);
+}
+
+async function throwPostUpdateError(
+  db: D1Database,
+  id: string,
+): Promise<never> {
+  const existing = await db
+    .prepare("SELECT id FROM posts WHERE id = ? AND deleted_at IS NULL")
+    .bind(id)
+    .first<IdRow>();
+  if (existing === null) {
+    throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
+  }
+  throw new ApiError(
+    409,
+    "POST_IMAGE_DELETE_REQUIRED",
+    "Hosted images must be deleted through the post image endpoint.",
+  );
+}
+
+export async function assertPostImageAttached(
+  db: D1Database,
+  id: string,
+  imageUrl: string,
+): Promise<void> {
+  const row = await db
+    .prepare(
+      `SELECT content, images_json
+       FROM posts
+       WHERE id = ? AND deleted_at IS NULL`,
+    )
+    .bind(id)
+    .first<{ content: string; images_json: string }>();
+  if (row === null) {
+    throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
+  }
+  const images = parseImages(row.images_json);
+  if (!images.includes(imageUrl)) {
+    throw new ApiError(
+      404,
+      "POST_IMAGE_NOT_FOUND",
+      "The image is not attached to this post.",
+    );
+  }
+  if (row.content.length === 0 && images.length === 1) {
+    throw new ApiError(
+      422,
+      "EMPTY_POST",
+      "Post text or at least one image is required.",
+    );
+  }
+}
+
+export async function removePostImage(
+  db: D1Database,
+  id: string,
+  imageUrl: string,
+): Promise<Post> {
+  const updated = await db
+    .prepare(
+      `UPDATE posts
+       SET images_json = COALESCE(
+             (
+               SELECT json_group_array(value)
+               FROM json_each(posts.images_json)
+               WHERE value <> ?
+             ),
+             '[]'
+           ),
+           updated_at = ?
+       WHERE id = ?
+       RETURNING ${postColumns}`,
+    )
+    .bind(imageUrl, new Date().toISOString(), id)
+    .first<PostRow>();
   if (updated === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
   }

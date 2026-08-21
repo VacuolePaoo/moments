@@ -38,8 +38,8 @@
 
 在 Cloudflare Dashboard 中创建 Workers Builds 项目并连接 Fork 后的 GitHub 仓库：
 
-| 配置项 | 填写内容 |
-| --- | --- |
+| 配置项         | 填写内容            |
+| -------------- | ------------------- |
 | Root directory | `/`，即仓库根目录 |
 | Deploy command | `pnpm deploy:api` |
 
@@ -49,13 +49,13 @@
 
 首次部署完成后，在 Worker 的 **Settings → Variables and Secrets** 中添加：
 
-| 变量 | 类型 | 示例或说明 |
-| --- | --- | --- |
-| `ALLOWED_ORIGIN` | Variable | 最终前端源地址，例如 `https://moments.example.com`，不要带末尾 `/` |
-| `CLERK_JWT_KEY` | Variable | Clerk PEM 公钥；可粘贴多行，也可将换行写成 `\n` |
-| `ADMIN_CLERK_USER_ID` | Variable | 唯一管理员的 Clerk `user_...` ID |
-| `CFBED_BASE_URL` | Variable | ImgBed 源地址，例如 `https://file.example.com` |
-| `CFBED_API_TOKEN` | Secret | 拥有 `delete` 权限的 ImgBed Token |
+| 变量                    | 类型     | 示例或说明                                                            |
+| ----------------------- | -------- | --------------------------------------------------------------------- |
+| `ALLOWED_ORIGIN`      | Variable | 最终前端源地址，例如`https://moments.example.com`，不要带末尾 `/` |
+| `CLERK_JWT_KEY`       | Variable | Clerk PEM 公钥；可粘贴多行，也可将换行写成`\n`                      |
+| `ADMIN_CLERK_USER_ID` | Variable | 唯一管理员的 Clerk`user_...` ID                                     |
+| `CFBED_BASE_URL`      | Variable | ImgBed 源地址，例如`https://file.example.com`                       |
+| `CFBED_API_TOKEN`     | Secret   | 拥有`delete` 权限的 ImgBed Token                                    |
 
 保存变量后重新部署 Worker，记录其公开地址，例如：
 
@@ -72,6 +72,8 @@ GET https://你的-worker-地址/openapi.json
 
 `/health` 应返回 `status: "ok"` 和 `database: "ok"`。
 
+站点同时提供标准 RSS 2.0 订阅地址 `https://你的前端域名/rss.xml`，内容范围为最近 20 个亚洲/上海自然日；Worker 也在 `/rss.xml` 提供同一份源数据。
+
 ### 使用本地 Wrangler 部署
 
 也可以在仓库根目录执行：
@@ -86,21 +88,21 @@ pnpm deploy:api
 
 在 Vercel 导入同一个 GitHub 仓库：
 
-| 配置项 | 填写内容 |
-| --- | --- |
-| Framework Preset | Next.js |
-| Root Directory | `apps/web` |
+| 配置项           | 填写内容     |
+| ---------------- | ------------ |
+| Framework Preset | Next.js      |
+| Root Directory   | `apps/web` |
 
 添加以下环境变量：
 
-| 变量 | 类型 | 示例或说明 |
-| --- | --- | --- |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | 公开 | Clerk Publishable Key，通常以 `pk_` 开头 |
-| `CLERK_SECRET_KEY` | Secret | Clerk Secret Key，通常以 `sk_` 开头 |
-| `NEXT_PUBLIC_API_BASE_URL` | 公开 | Worker 公开源地址，不要带末尾 `/` |
-| `CFBED_BASE_URL` | 服务端 | ImgBed 源地址，不要带末尾 `/` |
-| `CFBED_API_TOKEN` | Secret | 拥有 `upload` 权限的 ImgBed Token |
-| `CFBED_UPLOAD_FOLDER` | 服务端、可选 | 推荐填写 `moments` |
+| 变量                                  | 类型         | 示例或说明                                |
+| ------------------------------------- | ------------ | ----------------------------------------- |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | 公开         | Clerk Publishable Key，通常以`pk_` 开头 |
+| `CLERK_SECRET_KEY`                  | Secret       | Clerk Secret Key，通常以`sk_` 开头      |
+| `NEXT_PUBLIC_API_BASE_URL`          | 公开         | Worker 公开源地址，不要带末尾`/`        |
+| `CFBED_BASE_URL`                    | 服务端       | ImgBed 源地址，不要带末尾`/`            |
+| `CFBED_API_TOKEN`                   | Secret       | 拥有`upload` 权限的 ImgBed Token        |
+| `CFBED_UPLOAD_FOLDER`               | 服务端、可选 | 推荐填写`moments`                       |
 
 只有以 `NEXT_PUBLIC_` 开头的变量会进入浏览器代码。不要给 Clerk Secret Key 或 ImgBed Token 添加该前缀。
 
@@ -113,6 +115,7 @@ pnpm deploy:api
 3. 删除说说并进入回收站。
 4. 测试恢复和永久删除。
 5. 永久删除带图片的说说后，确认 ImgBed 中的文件也已删除。
+6. 编辑说说并移除旧图片，确认图床删除成功后页面与 D1 中都不再保留该图片。
 
 ## 本地开发
 

@@ -344,6 +344,21 @@
         },
         "additionalProperties": false
       },
+      "DeletePostImage": {
+        "type": "object",
+        "properties": {
+          "imageUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Exact URL of the hosted image to delete from this post.",
+            "example": "https://file.example.com/file/moments/example.jpg"
+          }
+        },
+        "required": [
+          "imageUrl"
+        ],
+        "additionalProperties": false
+      },
       "DeletedPostList": {
         "type": "object",
         "properties": {
@@ -801,6 +816,37 @@
         }
       }
     },
+    "/rss.xml": {
+      "get": {
+        "operationId": "getRecentMomentsRss",
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Get an RSS 2.0 feed for the most recent 20 Shanghai calendar days",
+        "responses": {
+          "200": {
+            "description": "An RSS 2.0 XML document containing public posts.",
+            "content": {
+              "application/rss+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/posts/{id}": {
       "get": {
         "operationId": "getPostById",
@@ -941,6 +987,16 @@
               }
             }
           },
+          "409": {
+            "description": "Hosted images must be deleted through the post image endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Invalid request.",
             "content": {
@@ -1054,6 +1110,126 @@
           },
           "503": {
             "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/images": {
+      "delete": {
+        "operationId": "deletePostImage",
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Delete one hosted image and detach it from a post",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stable post ID.",
+              "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+            },
+            "required": true,
+            "description": "Stable post ID.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletePostImage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Hosted image deleted and post image list updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post or attached image not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Deleting the image would empty the post.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Hosted image deletion failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or hosted image deletion is not configured.",
             "content": {
               "application/json": {
                 "schema": {

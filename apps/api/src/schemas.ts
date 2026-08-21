@@ -117,20 +117,25 @@ export const WritePostSchema = z
       description:
         "Plain text. Consecutive spaces, tabs and line breaks are normalized before storage.",
     }),
-    images: z
-      .array(z.url())
-      .max(18)
-      .default([])
-      .openapi({
-        description:
-          "Ordered image URLs, at most 18. Text or at least one image is required.",
-      }),
+    images: z.array(z.url()).max(18).default([]).openapi({
+      description:
+        "Ordered image URLs, at most 18. Text or at least one image is required.",
+    }),
   })
   .refine(
     ({ content, images }) => content.trim().length > 0 || images.length > 0,
     { message: "Text or at least one image is required." },
   )
   .openapi("WritePost");
+
+export const DeletePostImageSchema = z
+  .strictObject({
+    imageUrl: z.url().openapi({
+      description: "Exact URL of the hosted image to delete from this post.",
+      example: "https://file.example.com/file/moments/example.jpg",
+    }),
+  })
+  .openapi("DeletePostImage");
 
 const ErrorDetailSchema = z.object({
   path: z.string(),

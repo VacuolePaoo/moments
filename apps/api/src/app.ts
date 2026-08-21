@@ -9,6 +9,7 @@ import {
   verifyClerkSession,
 } from "./auth";
 import {
+  assertPostImageAttached,
   createPost,
   getDateDetail,
   getDeletedPostImages,
@@ -16,7 +17,9 @@ import {
   getRandomDateDetail,
   listDeletedPosts,
   listPosts,
+  listPostsInWindow,
   permanentlyDeletePost,
+  removePostImage,
   restorePost,
   softDeletePost,
   updatePost,
@@ -31,7 +34,13 @@ import { ApiError, errorBody, errorResponse } from "./lib/errors";
 import { openApiConfig } from "./openapi";
 import { deleteImgBedImages } from "./services/imgbed";
 import {
+  canonicalSiteOrigin,
+  renderRss,
+  rssWindowBounds,
+} from "./services/rss";
+import {
   AuthStatusSchema,
+  DeletePostImageSchema,
   DeletedPostListSchema,
   ErrorSchema,
   HealthSchema,
@@ -47,6 +56,10 @@ import type { AppEnv, ImageDeleter, TokenVerifier } from "./types";
 
 const jsonContent = <T extends z.ZodType>(schema: T) => ({
   "application/json": { schema },
+});
+
+const rssContent = (schema: z.ZodString) => ({
+  "application/rss+xml": { schema },
 });
 
 const errorResponseDefinition = (description: string) => ({
@@ -233,6 +246,21 @@ const getRandomDateRoute = createRoute({
   },
 });
 
+const getRssRoute = createRoute({
+  method: "get",
+  path: "/rss.xml",
+  operationId: "getRecentMomentsRss",
+  tags: ["Posts"],
+  summary: "Get an RSS 2.0 feed for the most recent 20 Shanghai calendar days",
+  responses: {
+    200: {
+      description: "An RSS 2.0 XML document containing public posts.",
+      content: rssContent(z.string()),
+    },
+    500: errorResponseDefinition("Unexpected server error."),
+  },
+});
+
 const getPostRoute = createRoute({
   method: "get",
   path: "/api/v1/posts/{id}",
@@ -287,9 +315,40 @@ const updatePostRoute = createRoute({
     401: errorResponseDefinition("Authentication required."),
     403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
+    409: errorResponseDefinition(
+      "Hosted images must be deleted through the post image endpoint.",
+    ),
     422: errorResponseDefinition("Invalid request."),
     500: errorResponseDefinition("Unexpected server error."),
     503: errorResponseDefinition("Authentication is not configured."),
+  },
+});
+
+const deletePostImageRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/posts/{id}/images",
+  operationId: "deletePostImage",
+  tags: ["Posts"],
+  summary: "Delete one hosted image and detach it from a post",
+  security: [{ ClerkBearer: [] }],
+  request: {
+    params: z.object({ id: PostIdSchema }),
+    body: { required: true, content: jsonContent(DeletePostImageSchema) },
+  },
+  responses: {
+    200: {
+      description: "Hosted image deleted and post image list updated.",
+      content: jsonContent(PostSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    404: errorResponseDefinition("Post or attached image not found."),
+    422: errorResponseDefinition("Deleting the image would empty the post."),
+    500: errorResponseDefinition("Unexpected server error."),
+    502: errorResponseDefinition("Hosted image deletion failed."),
+    503: errorResponseDefinition(
+      "Authentication or hosted image deletion is not configured.",
+    ),
   },
 });
 
@@ -472,7 +531,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.openapi(listPostsRoute, async (c) => {
     const { limit, cursor, anchorDate, date } = c.req.valid("query");
-    if ([cursor, anchorDate, date].filter((value) => value !== undefined).length > 1) {
+    if (
+      [cursor, anchorDate, date].filter((value) => value !== undefined).length >
+      1
+    ) {
       throw new ApiError(
         422,
         "PAGINATION_CONFLICT",
@@ -508,6 +570,16 @@ export function createApp(options: CreateAppOptions = {}) {
     );
   });
 
+  app.openapi(getRssRoute, async (c) => {
+    const now = new Date();
+    const { startAt, endAt } = rssWindowBounds(now);
+    const posts = await listPostsInWindow(c.env.DB, startAt, endAt);
+    const siteOrigin = canonicalSiteOrigin(c.env.ALLOWED_ORIGIN, c.req.url);
+    return c.body(renderRss(posts, siteOrigin, now), 200, {
+      "Content-Type": "application/rss+xml; charset=utf-8",
+    });
+  });
+
   app.openapi(getPostRoute, async (c) => {
     return c.json(await getPostDetail(c.env.DB, c.req.valid("param").id), 200);
   });
@@ -524,6 +596,14 @@ export function createApp(options: CreateAppOptions = {}) {
       await updatePost(c.env.DB, id, input.content, input.images),
       200,
     );
+  });
+
+  app.openapi(deletePostImageRoute, async (c) => {
+    const { id } = c.req.valid("param");
+    const { imageUrl } = c.req.valid("json");
+    await assertPostImageAttached(c.env.DB, id, imageUrl);
+    await imageDeleter([imageUrl], c.env);
+    return c.json(await removePostImage(c.env.DB, id, imageUrl), 200);
   });
 
   app.openapi(deletePostRoute, async (c) => {

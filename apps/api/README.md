@@ -17,6 +17,7 @@ Public endpoints work without Clerk configuration. To test authenticated endpoin
 ## API contract
 
 - Runtime document: `GET /openapi.json`
+- RSS 2.0 document: `GET /rss.xml`（最近 20 个亚洲/上海自然日）
 - Checked-in artifact: `openapi/openapi.json`
 - 中文调试文档：`openapi/openapi.zh-CN.json`（可直接导入 Postman 或 ApiFox）
 - Regenerate: `pnpm openapi:generate`
@@ -128,3 +129,9 @@ documented `deleted`/`failed` result accounts for every file. Non-standard or
 partial acknowledgements are completed through the single-file endpoint before
 the D1 row is removed. Configure the same ImgBed origin and token in Vercel for
 uploads.
+
+Editing uses `DELETE /api/v1/posts/{id}/images` for each removed hosted image.
+The Worker calls ImgBed's documented single-file delete endpoint and removes the
+URL from `images_json` only after ImgBed confirms the exact file ID. Ordinary
+`PATCH /api/v1/posts/{id}` requests may add images but cannot remove existing
+image URLs, preventing clients from bypassing hosted-file cleanup.

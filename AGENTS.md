@@ -27,7 +27,7 @@ Self-hosted personal "moments" (说说) site: Next.js frontend + Cloudflare Work
 
 ## Web rules
 
-- Read `apps/web/DESIGN.md` before any UI change — it is the confirmed design spec. Key invariants: all UI copy in Simplified Chinese; feed grouped by calendar day in a fixed `Asia/Shanghai` timezone; no avatars or author identity; admin actions gated by the Worker's `isAdmin`; Lucide icons with Chinese tooltips; keep default shadcn styles/focus states; no custom animations.
+- Preserve the current implemented product and visual behavior unless the task explicitly changes it. Key invariants: all UI copy in Simplified Chinese; feed grouped by calendar day in a fixed `Asia/Shanghai` timezone; no avatars or author identity; admin actions gated by the Worker's `isAdmin`; Lucide icons with Chinese tooltips; keep default shadcn styles and focus states.
 - For every new or changed UI, prefer shadcn components and composition over custom primitives. First inspect `apps/web/components/ui` and `apps/web/components.json`; if the needed component is not installed, search its registry and add it with the project runner (`pnpm dlx shadcn@latest search/docs/add`) before writing UI. A missing local component is not permission to recreate it by hand. Reuse built-in variants, semantic tokens, focus states, and accessibility behavior. Write a custom component only when shadcn has no suitable primitive, and record that reason in the change summary.
 - `apps/web/AGENTS.md` is auto-written by `next dev` (Next.js 16 agent rules). Next.js 16.3 may differ from training data — consult `node_modules/next/dist/docs/` before writing framework code.
 - Feature components live in `apps/web/components/moments`; shadcn primitives in `components/ui`.

@@ -23,3 +23,7 @@ CFBED_UPLOAD_FOLDER=moments
 `CFBED_API_TOKEN` must not use the `NEXT_PUBLIC_` prefix. The proxy accepts only
 image MIME types and verifies the caller as the Moments administrator through
 the Worker before forwarding a file to CloudFlare ImgBed.
+
+The frontend exposes `GET /rss.xml` and streams the Worker's RSS 2.0 document,
+which contains public Moments from the most recent 20 Asia/Shanghai calendar
+days.

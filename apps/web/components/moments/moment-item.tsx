@@ -37,7 +37,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { updatePost, type MomentPost } from "./api";
+import {
+  MomentsApiError,
+  deletePostImage,
+  updatePost,
+  type MomentPost,
+} from "./api";
 import { formatPostTime } from "./date";
 import { editDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
@@ -248,8 +253,31 @@ export function MomentItem({
     try {
       const token = await getToken();
       if (!token) throw new Error("登录状态已失效。");
-      const imageUrls = await uploadEditableImages(images, token, updateImage);
-      const updated = await updatePost(post.id, content, imageUrls, token);
+      const desiredImageUrls = await uploadEditableImages(
+        images,
+        token,
+        updateImage,
+      );
+      const desiredImages = new Set(desiredImageUrls);
+      const removedImageUrls = post.images.filter(
+        (imageUrl) => !desiredImages.has(imageUrl),
+      );
+      const additiveImageUrls = [
+        ...new Set([...post.images, ...desiredImageUrls]),
+      ];
+
+      let updated = await updatePost(
+        post.id,
+        content,
+        additiveImageUrls,
+        token,
+      );
+      onUpdated(updated);
+      for (const imageUrl of removedImageUrls) {
+        updated = await deletePostImage(post.id, imageUrl, token);
+        onUpdated(updated);
+      }
+
       removeDraft(draftKey);
       setContent(updated.content);
       replaceImages(editableImagesFromUrls(updated.images));
@@ -257,10 +285,17 @@ export function MomentItem({
       setIsEditing(false);
       onUpdated(updated);
     } catch (error) {
+      const imageDeletionFailed =
+        error instanceof MomentsApiError &&
+        (error.code === "IMAGE_DELETE_FAILED" ||
+          error.code === "IMAGE_DELETE_NOT_CONFIGURED");
       toast.add({
         type: "error",
-        description:
-          error instanceof Error ? error.message : "保存失败，请稍后重试。",
+        description: imageDeletionFailed
+          ? "旧图片删除失败，图片仍保留在说说中，请稍后重试。"
+          : error instanceof Error
+            ? error.message
+            : "保存失败，请稍后重试。",
       });
     } finally {
       setIsSaving(false);
@@ -358,11 +393,8 @@ export function MomentItem({
               className="sr-only"
               tabIndex={-1}
               onChange={(event) =>
-                handleEditableImageSelection(
-                  event,
-                  images.length,
-                  (accepted) =>
-                    setImages((current) => [...current, ...accepted]),
+                handleEditableImageSelection(event, images.length, (accepted) =>
+                  setImages((current) => [...current, ...accepted]),
                 )
               }
             />

@@ -80,7 +80,7 @@ export class MomentsApiError extends Error {
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   token?: string;
-  body?: { content: string; images: string[] };
+  body?: { content: string; images: string[] } | { imageUrl: string };
   signal?: AbortSignal;
 }
 
@@ -232,6 +232,18 @@ export function updatePost(
     method: "PATCH",
     token,
     body: { content, images },
+  });
+}
+
+export function deletePostImage(
+  id: string,
+  imageUrl: string,
+  token: string,
+): Promise<MomentPost> {
+  return request<MomentPost>(`/api/v1/posts/${encodeURIComponent(id)}/images`, {
+    method: "DELETE",
+    token,
+    body: { imageUrl },
   });
 }
 

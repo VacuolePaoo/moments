@@ -35,6 +35,12 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <link
+          rel="alternate"
+          type="application/rss+xml"
+          title="Moments RSS"
+          href="/rss.xml"
+        />
         <script dangerouslySetInnerHTML={{ __html: systemThemeScript }} />
       </head>
       <body className="min-h-full bg-background text-base leading-6 text-foreground">

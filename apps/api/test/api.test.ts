@@ -54,6 +54,7 @@ describe("Moments API", () => {
     expect(document.openapi).toBe("3.1.0");
     expect(document.paths).toHaveProperty("/api/v1/posts");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}");
+    expect(document.paths).toHaveProperty("/api/v1/posts/{id}/images");
     expect(document.paths).toHaveProperty("/api/v1/posts/{id}/restore");
     expect(document.paths).not.toHaveProperty("/api/v1/dates/{date}");
     expect(document.paths).toHaveProperty("/api/v1/statistics");
@@ -61,6 +62,7 @@ describe("Moments API", () => {
     expect(document.paths).toHaveProperty("/api/v1/random");
     expect(document.paths).toHaveProperty("/api/v1/trash");
     expect(document.paths).toHaveProperty("/api/v1/trash/{id}");
+    expect(document.paths).toHaveProperty("/rss.xml");
   });
 
   it("requires Clerk authentication for writes", async () => {
@@ -83,13 +85,18 @@ describe("Moments API", () => {
     expect(response.status).toBe(403);
   });
 
-  it("creates and updates image-only posts", async () => {
-    const app = createApp({ tokenVerifier: adminVerifier });
-    const response = await createApp({ tokenVerifier: adminVerifier }).request(
+  it("creates image-only posts and adds images without replacing them", async () => {
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: () => Promise.resolve(),
+    });
+    const originalImage = "https://file.vacu.top/file/test.png";
+    const addedImage = "https://file.vacu.top/file/updated.png";
+    const response = await app.request(
       "/api/v1/posts",
       jsonRequest("POST", {
         content: "",
-        images: ["https://file.vacu.top/file/test.png"],
+        images: [originalImage],
       }),
       env,
     );
@@ -100,20 +107,30 @@ describe("Moments API", () => {
       images: string[];
     }>();
     expect(created.content).toBe("");
-    expect(created.images).toEqual(["https://file.vacu.top/file/test.png"]);
+    expect(created.images).toEqual([originalImage]);
 
     const updatedResponse = await app.request(
       `/api/v1/posts/${created.id}`,
       jsonRequest("PATCH", {
         content: "增加文字",
-        images: ["https://file.vacu.top/file/updated.png"],
+        images: [originalImage, addedImage],
       }),
       env,
     );
     expect(updatedResponse.status).toBe(200);
     await expect(updatedResponse.json()).resolves.toMatchObject({
       content: "增加文字",
-      images: ["https://file.vacu.top/file/updated.png"],
+      images: [originalImage, addedImage],
+    });
+
+    const removedResponse = await app.request(
+      `/api/v1/posts/${created.id}/images`,
+      jsonRequest("DELETE", { imageUrl: originalImage }),
+      env,
+    );
+    expect(removedResponse.status).toBe(200);
+    await expect(removedResponse.json()).resolves.toMatchObject({
+      images: [addedImage],
     });
 
     const emptyResponse = await app.request(
@@ -122,6 +139,135 @@ describe("Moments API", () => {
       env,
     );
     expect(emptyResponse.status).toBe(422);
+  });
+
+  it("deletes a hosted image before detaching it from a post", async () => {
+    const deletedImages: string[][] = [];
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: (images) => {
+        deletedImages.push(images);
+        return Promise.resolve();
+      },
+    });
+    const oldImage = "https://file.vacu.top/file/moments/old.png";
+    const keptImage = "https://file.vacu.top/file/moments/kept.png";
+    const newImage = "https://file.vacu.top/file/moments/new.png";
+    const createResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", {
+        content: "图片生命周期",
+        images: [oldImage, keptImage],
+      }),
+      env,
+    );
+    const post = await createResponse.json<{ id: string }>();
+
+    const bypassResponse = await app.request(
+      `/api/v1/posts/${post.id}`,
+      jsonRequest("PATCH", {
+        content: "不能绕过删除接口",
+        images: [keptImage],
+      }),
+      env,
+    );
+    expect(bypassResponse.status).toBe(409);
+
+    const additiveResponse = await app.request(
+      `/api/v1/posts/${post.id}`,
+      jsonRequest("PATCH", {
+        content: "允许添加图片",
+        images: [oldImage, keptImage, newImage],
+      }),
+      env,
+    );
+    expect(additiveResponse.status).toBe(200);
+
+    const deleteResponse = await app.request(
+      `/api/v1/posts/${post.id}/images`,
+      jsonRequest("DELETE", { imageUrl: oldImage }),
+      env,
+    );
+    expect(deleteResponse.status).toBe(200);
+    await expect(deleteResponse.json()).resolves.toMatchObject({
+      images: [keptImage, newImage],
+    });
+    expect(deletedImages).toEqual([[oldImage]]);
+    await expect(
+      env.DB.prepare("SELECT images_json FROM posts WHERE id = ?")
+        .bind(post.id)
+        .first<{ images_json: string }>(),
+    ).resolves.toEqual({ images_json: JSON.stringify([keptImage, newImage]) });
+  });
+
+  it("keeps an attached image when hosted deletion fails", async () => {
+    const image = "https://file.vacu.top/file/moments/retry-edit.png";
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: () =>
+        Promise.reject(
+          new ApiError(
+            502,
+            "IMAGE_DELETE_FAILED",
+            "Hosted image deletion failed.",
+          ),
+        ),
+    });
+    const createResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "删除失败时保留", images: [image] }),
+      env,
+    );
+    const post = await createResponse.json<{ id: string }>();
+    const response = await app.request(
+      `/api/v1/posts/${post.id}/images`,
+      jsonRequest("DELETE", { imageUrl: image }),
+      env,
+    );
+    expect(response.status).toBe(502);
+    await expect(
+      env.DB.prepare("SELECT images_json FROM posts WHERE id = ?")
+        .bind(post.id)
+        .first<{ images_json: string }>(),
+    ).resolves.toEqual({ images_json: JSON.stringify([image]) });
+  });
+
+  it("serves an RSS 2.0 feed limited to the latest twenty Shanghai days", async () => {
+    const now = new Date();
+    const recentAt = now.toISOString();
+    const expiredAt = new Date(
+      now.getTime() - 20 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const recentId = "99999999-9999-4999-8999-999999999991";
+    const expiredId = "99999999-9999-4999-8999-999999999992";
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).bind(
+        recentId,
+        "RSS <内容> & 订阅",
+        JSON.stringify(["https://file.example.com/file/rss.png"]),
+        recentAt,
+        recentAt,
+      ),
+      env.DB.prepare(
+        `INSERT INTO posts (id, content, images_json, created_at, updated_at)
+         VALUES (?, '过期内容', '[]', ?, ?)`,
+      ).bind(expiredId, expiredAt, expiredAt),
+    ]);
+
+    const response = await createApp().request("/rss.xml", {}, env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain(
+      "application/rss+xml",
+    );
+    const rss = await response.text();
+    expect(rss).toContain('<rss version="2.0"');
+    expect(rss).toContain(`urn:uuid:${recentId}`);
+    expect(rss).not.toContain(expiredId);
+    expect(rss).toContain("RSS &lt;内容&gt; &amp; 订阅");
+    expect(rss).toContain(`${env.ALLOWED_ORIGIN}/rss.xml`);
   });
 
   it("creates, normalizes, updates, navigates, paginates and soft-deletes posts", async () => {
@@ -432,7 +578,10 @@ describe("Moments API", () => {
   });
 
   it("maintains statistics aggregates incrementally across writes", async () => {
-    const app = createApp({ tokenVerifier: adminVerifier });
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: () => Promise.resolve(),
+    });
     const imageA = "https://file.vacu.top/file/moments/a.png";
     const imageB = "https://file.vacu.top/file/moments/b.png";
 
@@ -477,10 +626,19 @@ describe("Moments API", () => {
 
     const updateResponse = await app.request(
       `/api/v1/posts/${first.id}`,
-      jsonRequest("PATCH", { content: "五个字了", images: [imageA] }),
+      jsonRequest("PATCH", {
+        content: "五个字了",
+        images: [imageA, imageB],
+      }),
       env,
     );
     expect(updateResponse.status).toBe(200);
+    const imageDeleteResponse = await app.request(
+      `/api/v1/posts/${first.id}/images`,
+      jsonRequest("DELETE", { imageUrl: imageB }),
+      env,
+    );
+    expect(imageDeleteResponse.status).toBe(200);
     expect(await readDaily()).toEqual({
       post_count: 2,
       character_count: 5,
@@ -523,19 +681,33 @@ describe("Moments API", () => {
     });
     const [rebuilt, reread] = await Promise.all([
       rebuildResponse.json<{ days: Array<{ date: string; count: number }> }>(),
-      (
-        await app.request("/api/v1/statistics", jsonRequest("GET"), env)
-      ).json<{ days: Array<{ date: string; count: number }> }>(),
+      (await app.request("/api/v1/statistics", jsonRequest("GET"), env)).json<{
+        days: Array<{ date: string; count: number }>;
+      }>(),
     ]);
     expect(rebuilt.days).toEqual(reread.days);
-    expect(rebuilt.days).toEqual([{ date: rebuilt.days[0]?.date ?? "", count: 2 }]);
+    expect(rebuilt.days).toEqual([
+      { date: rebuilt.days[0]?.date ?? "", count: 2 },
+    ]);
   });
 
   it("keeps derived data correct for direct SQL writes and dense random slots", async () => {
     const rows = [
-      ["88888888-8888-4888-8888-888888888881", "一", "2026-08-01T00:00:00.000Z"],
-      ["88888888-8888-4888-8888-888888888882", "二二", "2026-08-01T01:00:00.000Z"],
-      ["88888888-8888-4888-8888-888888888883", "三三三", "2026-08-01T02:00:00.000Z"],
+      [
+        "88888888-8888-4888-8888-888888888881",
+        "一",
+        "2026-08-01T00:00:00.000Z",
+      ],
+      [
+        "88888888-8888-4888-8888-888888888882",
+        "二二",
+        "2026-08-01T01:00:00.000Z",
+      ],
+      [
+        "88888888-8888-4888-8888-888888888883",
+        "三三三",
+        "2026-08-01T02:00:00.000Z",
+      ],
     ] as const;
     await env.DB.batch(
       rows.map(([id, content, createdAt]) =>
@@ -560,9 +732,7 @@ describe("Moments API", () => {
       { slot: 3, post_id: rows[2][0] },
     ]);
 
-    await env.DB.prepare(
-      "UPDATE posts SET deleted_at = ? WHERE id = ?",
-    )
+    await env.DB.prepare("UPDATE posts SET deleted_at = ? WHERE id = ?")
       .bind("2026-08-02T00:00:00.000Z", rows[1][0])
       .run();
     expect(await readSlots()).toEqual([
@@ -575,9 +745,7 @@ describe("Moments API", () => {
     )
       .bind("2026-08-02T00:00:01.000Z", rows[2][0])
       .run();
-    await env.DB.prepare(
-      "UPDATE posts SET deleted_at = NULL WHERE id = ?",
-    )
+    await env.DB.prepare("UPDATE posts SET deleted_at = NULL WHERE id = ?")
       .bind(rows[1][0])
       .run();
 
@@ -641,7 +809,8 @@ describe("Moments API", () => {
   it("rejects posts with more than eighteen images", async () => {
     const images = Array.from(
       { length: 19 },
-      (_, index) => `https://file.vacu.top/file/moments/image-${String(index)}.png`,
+      (_, index) =>
+        `https://file.vacu.top/file/moments/image-${String(index)}.png`,
     );
     const response = await createApp({ tokenVerifier: adminVerifier }).request(
       "/api/v1/posts",

@@ -28,6 +28,8 @@ const translations: Readonly<Record<string, string>> = {
     "纯文本。保存前会规范化连续空格、制表符和换行。",
   "Ordered image URLs, at most 18. Text or at least one image is required.":
     "有序图片 URL 列表，最多 18 张。正文和图片至少提供一项。",
+  "Exact URL of the hosted image to delete from this post.":
+    "要从该内容中删除的托管图片完整 URL。",
   "Start at the end of this Asia/Shanghai date and page toward older posts. Mutually exclusive with cursor and date.":
     "从该亚洲/上海日期的末尾开始向更早内容分页；不能与 cursor 或 date 同时使用。",
   "Return every post of this Asia/Shanghai date plus adjacent-date navigation, ignoring limit. Mutually exclusive with cursor and anchorDate.":
@@ -49,6 +51,10 @@ const translations: Readonly<Record<string, string>> = {
   "List soft-deleted posts": "分页获取回收站内容",
   "Permanently delete a post and its managed hosted images":
     "永久删除内容及其托管图片",
+  "Delete one hosted image and detach it from a post":
+    "删除单张托管图片并从内容中移除其 URL",
+  "Get an RSS 2.0 feed for the most recent 20 Shanghai calendar days":
+    "获取最近 20 个亚洲/上海自然日的 RSS 2.0 订阅源",
   "Get authenticated administrator status": "获取当前用户的管理员状态",
   "The Worker can query D1.": "Worker 可以正常查询 D1。",
   "D1 is unavailable.": "D1 当前不可用。",
@@ -73,6 +79,8 @@ const translations: Readonly<Record<string, string>> = {
   "Post not found.": "内容不存在。",
   "Invalid post ID.": "内容 ID 无效。",
   "Post updated.": "内容更新成功。",
+  "Hosted images must be deleted through the post image endpoint.":
+    "托管图片必须通过内容图片删除接口移除。",
   "Invalid request.": "请求无效。",
   "Post moved to the recycle bin.": "内容已移入回收站。",
   "Post restored.": "内容恢复成功。",
@@ -80,6 +88,13 @@ const translations: Readonly<Record<string, string>> = {
   "A newest-deleted-first cursor page.":
     "按删除时间从新到旧排列的回收站游标分页结果。",
   "Hosted images and post permanently deleted.": "托管图片和内容已永久删除。",
+  "Hosted image deleted and post image list updated.":
+    "托管图片已删除，内容图片列表已更新。",
+  "Post or attached image not found.": "内容或其所附图片不存在。",
+  "Deleting the image would empty the post.":
+    "删除该图片后内容将为空，无法执行删除。",
+  "An RSS 2.0 XML document containing public posts.":
+    "包含公开内容的 RSS 2.0 XML 文档。",
   "Post is not in the trash.": "内容不在回收站中。",
   "Hosted image deletion failed.": "托管图片删除失败。",
   "Authentication or hosted image deletion is not configured.":
@@ -133,6 +148,9 @@ const schemaPropertyDescriptions: Readonly<
   WritePost: {
     content: "正文；保存前会规范化连续空格、制表符和换行。",
     images: "有序图片 URL 列表，最多 18 张；正文和图片至少提供一项。",
+  },
+  DeletePostImage: {
+    imageUrl: "要删除的托管图片完整 URL。",
   },
   DeletedPostList: {
     items: "当前页回收站内容列表。",
@@ -188,7 +206,8 @@ function addSchemaPropertyDescriptions(document: JsonObject): void {
 
 export function localizeOpenApiDocument(document: unknown): JsonObject {
   const cloned = JSON.parse(JSON.stringify(document)) as JsonValue;
-  if (!isJsonObject(cloned)) throw new Error("OpenAPI document is not an object.");
+  if (!isJsonObject(cloned))
+    throw new Error("OpenAPI document is not an object.");
   const localized = translate(cloned);
   if (!isJsonObject(localized)) {
     throw new Error("Localized OpenAPI document is not an object.");
@@ -202,7 +221,10 @@ export function localizeOpenApiDocument(document: unknown): JsonObject {
   ];
   localized.tags = [
     { name: "系统", description: "服务元数据与健康状态。" },
-    { name: "内容", description: "公开读取内容，以及管理员创建、编辑和删除内容。" },
+    {
+      name: "内容",
+      description: "公开读取内容，以及管理员创建、编辑和删除内容。",
+    },
     { name: "日期", description: "按亚洲/上海日期读取内容并导航。" },
     { name: "统计", description: "每日发布统计与管理员统计文案。" },
     { name: "回收站", description: "管理员查看、恢复和永久删除内容。" },
