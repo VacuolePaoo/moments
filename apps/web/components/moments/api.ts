@@ -1,3 +1,5 @@
+import { workerApiBaseUrl } from "@/lib/worker-api";
+
 export interface MomentPost {
   id: string;
   content: string;
@@ -44,6 +46,63 @@ export interface MomentStatistics {
   }>;
 }
 
+export interface AppSettings {
+  site: {
+    showName: boolean;
+    name: string;
+    description: string;
+  };
+  features: {
+    statistics: boolean;
+    random: boolean;
+    rss: boolean;
+  };
+  content: {
+    public: boolean;
+    pageSize: number;
+  };
+  updatedAt: string;
+}
+
+export interface UpdateSettings {
+  site?: Partial<AppSettings["site"]>;
+  features?: Partial<AppSettings["features"]>;
+  content?: Partial<AppSettings["content"]>;
+}
+
+export interface HealthStatus {
+  status: "ok";
+  database: "ok";
+  fileOperationsConfigured: boolean;
+  timestamp: string;
+}
+
+export interface CompleteBackup {
+  version: 1;
+  exportedAt: string;
+  settings: AppSettings;
+  posts: Array<MomentPost & { deletedAt: string | null }>;
+}
+
+export interface RestoreBackupPreview {
+  totalPosts: number;
+  conflictCount: number;
+  conflictIds: string[];
+  settingsWillBeRestored: true;
+}
+
+export interface RestoreBackupResult {
+  restoredPosts: number;
+  insertedPosts: number;
+  overwrittenPosts: number;
+  settings: AppSettings;
+}
+
+export interface ClearPostsResult {
+  deletedPosts: number;
+  deletedImages: number;
+}
+
 export const MAX_IMAGES_PER_POST = 18;
 
 export interface AuthStatus {
@@ -59,11 +118,7 @@ interface ApiErrorBody {
   requestId?: string;
 }
 
-const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-const API_BASE_URL = (configuredBaseUrl ?? "http://localhost:8787").replace(
-  /\/$/,
-  "",
-);
+const API_BASE_URL = workerApiBaseUrl();
 
 export class MomentsApiError extends Error {
   constructor(
@@ -80,7 +135,7 @@ export class MomentsApiError extends Error {
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   token?: string;
-  body?: { content: string; images: string[] } | { imageUrl: string };
+  body?: unknown;
   signal?: AbortSignal;
 }
 
@@ -153,12 +208,15 @@ export function listPosts(
     date?: string;
     signal?: AbortSignal;
   } = {},
+  token?: string,
 ): Promise<PostList> {
-  const query = new URLSearchParams({ limit: String(options.limit ?? 20) });
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
   if (options.cursor) query.set("cursor", options.cursor);
   if (options.anchorDate) query.set("anchorDate", options.anchorDate);
   if (options.date) query.set("date", options.date);
   return request<PostList>(`/api/v1/posts?${query.toString()}`, {
+    token,
     signal: options.signal,
   });
 }
@@ -177,8 +235,9 @@ function dateDetailFromPage(page: PostList): DateDetail {
 export async function getDateDetail(
   date: string,
   signal?: AbortSignal,
+  token?: string,
 ): Promise<DateDetail> {
-  const page = await listPosts({ date, signal });
+  const page = await listPosts({ date, signal }, token);
   return dateDetailFromPage(page);
 }
 
@@ -198,8 +257,9 @@ export function rebuildStatistics(token: string): Promise<MomentStatistics> {
 
 export async function getRandomMomentDate(
   signal?: AbortSignal,
+  token?: string,
 ): Promise<DateDetail> {
-  const page = await request<PostList>("/api/v1/random", { signal });
+  const page = await request<PostList>("/api/v1/random", { signal, token });
   return dateDetailFromPage(page);
 }
 
@@ -208,6 +268,79 @@ export function getAuthStatus(
   signal?: AbortSignal,
 ): Promise<AuthStatus> {
   return request<AuthStatus>("/api/v1/auth/me", { token, signal });
+}
+
+export function getPublicSettings(
+  signal?: AbortSignal,
+): Promise<AppSettings> {
+  return request<AppSettings>("/api/v1/settings/public", { signal });
+}
+
+export function getSettings(
+  token: string,
+  signal?: AbortSignal,
+): Promise<AppSettings> {
+  return request<AppSettings>("/api/v1/settings", { token, signal });
+}
+
+export function updateSettings(
+  update: UpdateSettings,
+  token: string,
+): Promise<AppSettings> {
+  return request<AppSettings>("/api/v1/settings", {
+    method: "PATCH",
+    token,
+    body: update,
+  });
+}
+
+export function getHealth(signal?: AbortSignal): Promise<HealthStatus> {
+  return request<HealthStatus>("/health", { signal });
+}
+
+export function createCompleteBackup(token: string): Promise<CompleteBackup> {
+  return request<CompleteBackup>("/api/v1/maintenance/backup", { token });
+}
+
+export function previewBackupRestore(
+  backup: CompleteBackup,
+  token: string,
+): Promise<RestoreBackupPreview> {
+  return request<RestoreBackupPreview>(
+    "/api/v1/maintenance/restore/preview",
+    {
+      method: "POST",
+      token,
+      body: { backup },
+    },
+  );
+}
+
+export function restoreCompleteBackup(
+  backup: CompleteBackup,
+  overwriteConflicts: boolean,
+  token: string,
+): Promise<RestoreBackupResult> {
+  return request<RestoreBackupResult>("/api/v1/maintenance/restore", {
+    method: "POST",
+    token,
+    body: { backup, overwriteConflicts },
+  });
+}
+
+export function clearAllPosts(
+  confirmation: string,
+  token: string,
+): Promise<ClearPostsResult> {
+  return request<ClearPostsResult>("/api/v1/maintenance/clear-posts", {
+    method: "POST",
+    token,
+    body: { confirmation },
+  });
+}
+
+export function apiDocumentationUrl(): string {
+  return `${API_BASE_URL}/openapi.json`;
 }
 
 export function createPost(

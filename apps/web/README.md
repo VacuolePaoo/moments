@@ -24,6 +24,16 @@ CFBED_UPLOAD_FOLDER=moments
 image MIME types and verifies the caller as the Moments administrator through
 the Worker before forwarding a file to CloudFlare ImgBed.
 
+When `CFBED_BASE_URL` is absent, the publish and edit forms do not render the
+add-image control. Multiple selected images upload through a bounded queue with
+up to three in flight; results are written back by selection index, so D1 URL
+order never depends on ImgBed response order.
+
 The frontend exposes `GET /rss.xml` and streams the Worker's RSS 2.0 document,
 which contains public Moments from the most recent 20 Asia/Shanghai calendar
 days.
+
+The administrator settings page groups system, feature and content settings in
+full-width shadcn Tabs. Settings are stored in D1 and enforced by Worker routes;
+the frontend loads them before rendering the bottom toolbar so feature icons do
+not appear and disappear after first paint.

@@ -45,7 +45,7 @@
 
 首次部署会自动创建名为 `moments-db` 的 D1 数据库，并将它绑定为 `DB`，然后执行 `apps/api/migrations` 中的全部迁移；不需要手动填写数据库 ID。后续部署只会执行尚未应用的迁移。
 
-从旧版本升级时也应使用完整的 `pnpm deploy:api`，不要只执行 `wrangler deploy`。当前版本需要应用统计聚合与 D1 Trigger 迁移；无需新增环境变量，也无需手工转换数据，迁移会回填统计数据和随机抽样槽位。
+从旧版本升级时也应使用完整的 `pnpm deploy:api`，不要只执行 `wrangler deploy`。当前版本会新增 D1 设置表，并把统计与随机抽样触发器拆分，使统计开关可以真正暂停聚合更新；无需新增环境变量，也无需手工转换数据。
 
 首次部署完成后，在 Worker 的 **Settings → Variables and Secrets** 中添加：
 
@@ -70,7 +70,7 @@ GET https://你的-worker-地址/health
 GET https://你的-worker-地址/openapi.json
 ```
 
-`/health` 应返回 `status: "ok"` 和 `database: "ok"`。
+`/health` 应返回 `status: "ok"`、`database: "ok"`，以及 Worker 图床地址是否配置的 `fileOperationsConfigured`。
 
 站点同时提供标准 RSS 2.0 订阅地址 `https://你的前端域名/rss.xml`，内容范围为最近 20 个亚洲/上海自然日；Worker 也在 `/rss.xml` 提供同一份源数据。
 
@@ -116,6 +116,8 @@ pnpm deploy:api
 4. 测试恢复和永久删除。
 5. 永久删除带图片的说说后，确认 ImgBed 中的文件也已删除。
 6. 编辑说说并移除旧图片，确认图床删除成功后页面与 D1 中都不再保留该图片。
+7. 打开设置页，确认系统状态、功能开关、内容公开和每次加载数量均可保存并真实影响前后端。
+8. 测试完整备份；清空数据会要求输入固定确认文字，并在图床文件全部删除成功后清空 D1。
 
 ## 本地开发
 

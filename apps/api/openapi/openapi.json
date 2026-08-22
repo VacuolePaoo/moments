@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Moments API",
-    "version": "2.0.0",
-    "description": "Public read and Clerk-protected write API for a personal Moments site. v2 merges date reads into GET /posts (?date=) and serves statistics from incremental aggregates."
+    "version": "2.1.0",
+    "description": "Configurable read and Clerk-protected administration API for a personal Moments site, with D1-backed feature settings and maintenance operations."
   },
   "servers": [
     {
@@ -30,6 +30,14 @@
     {
       "name": "Authentication",
       "description": "Clerk session and administrator status."
+    },
+    {
+      "name": "Settings",
+      "description": "Public runtime settings and administrator updates."
+    },
+    {
+      "name": "Maintenance",
+      "description": "Administrator backup and destructive data maintenance."
     }
   ],
   "components": {
@@ -57,6 +65,9 @@
               "ok"
             ]
           },
+          "fileOperationsConfigured": {
+            "type": "boolean"
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time"
@@ -65,6 +76,7 @@
         "required": [
           "status",
           "database",
+          "fileOperationsConfigured",
           "timestamp"
         ]
       },
@@ -416,6 +428,353 @@
           "authenticated",
           "isAdmin"
         ]
+      },
+      "AppSettings": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "$ref": "#/components/schemas/SiteSettings"
+          },
+          "features": {
+            "$ref": "#/components/schemas/FeatureSettings"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ContentSettings"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "site",
+          "features",
+          "content",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "SiteSettings": {
+        "type": "object",
+        "properties": {
+          "showName": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "default": "Moments"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 280,
+            "default": ""
+          }
+        },
+        "required": [
+          "showName"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureSettings": {
+        "type": "object",
+        "properties": {
+          "statistics": {
+            "type": "boolean"
+          },
+          "random": {
+            "type": "boolean"
+          },
+          "rss": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "statistics",
+          "random",
+          "rss"
+        ],
+        "additionalProperties": false
+      },
+      "ContentSettings": {
+        "type": "object",
+        "properties": {
+          "public": {
+            "type": "boolean"
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "public",
+          "pageSize"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateSettings": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "type": "object",
+            "properties": {
+              "showName": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "default": "Moments"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 280,
+                "default": ""
+              }
+            },
+            "additionalProperties": false
+          },
+          "features": {
+            "type": "object",
+            "properties": {
+              "statistics": {
+                "type": "boolean"
+              },
+              "random": {
+                "type": "boolean"
+              },
+              "rss": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "public": {
+                "type": "boolean"
+              },
+              "pageSize": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompleteBackup": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppSettings"
+          },
+          "posts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackupPost"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "exportedAt",
+          "settings",
+          "posts"
+        ],
+        "additionalProperties": false
+      },
+      "BackupPost": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable post ID.",
+            "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2048,
+              "format": "uri"
+            },
+            "maxItems": 18
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "edited": {
+            "type": "boolean"
+          },
+          "deletedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "images",
+          "createdAt",
+          "updatedAt",
+          "edited",
+          "deletedAt"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupPreview": {
+        "type": "object",
+        "properties": {
+          "totalPosts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conflictCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conflictIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stable post ID.",
+              "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+            }
+          },
+          "settingsWillBeRestored": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "totalPosts",
+          "conflictCount",
+          "conflictIds",
+          "settingsWillBeRestored"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupPreviewRequest": {
+        "type": "object",
+        "properties": {
+          "backup": {
+            "$ref": "#/components/schemas/CompleteBackup"
+          }
+        },
+        "required": [
+          "backup"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupResult": {
+        "type": "object",
+        "properties": {
+          "restoredPosts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "insertedPosts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overwrittenPosts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppSettings"
+          }
+        },
+        "required": [
+          "restoredPosts",
+          "insertedPosts",
+          "overwrittenPosts",
+          "settings"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupRequest": {
+        "type": "object",
+        "properties": {
+          "backup": {
+            "$ref": "#/components/schemas/CompleteBackup"
+          },
+          "overwriteConflicts": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "backup"
+        ],
+        "additionalProperties": false
+      },
+      "ClearPostsResult": {
+        "type": "object",
+        "properties": {
+          "deletedPosts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deletedImages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "deletedPosts",
+          "deletedImages"
+        ],
+        "additionalProperties": false
+      },
+      "ClearPosts": {
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "确认清空全部说说"
+            ]
+          }
+        },
+        "required": [
+          "confirmation"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -465,9 +824,10 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "default": 20
+              "description": "Page size. When omitted, the configured content page size is used."
             },
             "required": false,
+            "description": "Page size. When omitted, the configured content page size is used.",
             "name": "limit",
             "in": "query"
           },
@@ -518,6 +878,26 @@
           },
           "400": {
             "description": "Invalid pagination cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Content is not public.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -793,6 +1173,26 @@
               }
             }
           },
+          "401": {
+            "description": "Content is not public.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The feature is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "There are no posts to pick.",
             "content": {
@@ -830,6 +1230,26 @@
               "application/rss+xml": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Content is not public.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The feature is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -875,6 +1295,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Content is not public.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1617,6 +2057,561 @@
           },
           "503": {
             "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/public": {
+      "get": {
+        "operationId": "getPublicSettings",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get public site, feature and content settings",
+        "responses": {
+          "200": {
+            "description": "Current non-sensitive application settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Settings are not initialized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get administrator settings",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current application settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Settings or authentication are not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateSettings",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update administrator settings",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated application settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Settings or authentication are not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/backup": {
+      "get": {
+        "operationId": "createCompleteBackup",
+        "tags": [
+          "Maintenance"
+        ],
+        "summary": "Export a structured backup of all posts and settings",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete structured backup.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteBackup"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Settings or authentication are not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/restore/preview": {
+      "post": {
+        "operationId": "previewBackupRestore",
+        "tags": [
+          "Maintenance"
+        ],
+        "summary": "Validate a backup and preview post ID conflicts",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreBackupPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated backup and current post ID conflicts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreBackupPreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access and the configured origin are required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The backup payload is too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The backup is invalid or unsupported.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/restore": {
+      "post": {
+        "operationId": "restoreBackup",
+        "tags": [
+          "Maintenance"
+        ],
+        "summary": "Restore posts and settings from a structured backup",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreBackupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Backup restored atomically, including derived data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreBackupResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access and the configured origin are required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Existing post IDs conflict and overwrite was not confirmed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The backup payload is too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The backup is invalid or unsupported.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Settings or authentication are not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/clear-posts": {
+      "post": {
+        "operationId": "clearAllPosts",
+        "tags": [
+          "Maintenance"
+        ],
+        "summary": "Permanently delete all posts and their managed images",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearPosts"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "All hosted images and posts were permanently deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearPostsResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access and the configured origin are required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The confirmation phrase is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Hosted image deletion failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or hosted image deletion is not configured.",
             "content": {
               "application/json": {
                 "schema": {

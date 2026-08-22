@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Moments API（中文）",
-    "version": "2.0.0",
-    "description": "Moments 个人内容站点 API：公开读取，写操作由 Clerk 管理员鉴权保护。v2 将日期读取合并进 GET /posts（?date=），统计改由增量聚合表提供。"
+    "version": "2.1.0",
+    "description": "Moments 个人内容站点 API：读取权限可配置，管理操作由 Clerk 鉴权保护，功能设置与维护能力由 D1 提供。"
   },
   "servers": [
     {
@@ -35,6 +35,14 @@
     {
       "name": "身份认证",
       "description": "Clerk 会话与管理员状态。"
+    },
+    {
+      "name": "设置",
+      "description": "公开运行设置与管理员设置更新。"
+    },
+    {
+      "name": "数据维护",
+      "description": "管理员备份与破坏性数据维护操作。"
     }
   ],
   "components": {
@@ -64,6 +72,10 @@
             ],
             "description": "D1 数据库健康状态。"
           },
+          "fileOperationsConfigured": {
+            "type": "boolean",
+            "description": "Worker 是否配置了图床地址。"
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time",
@@ -73,6 +85,7 @@
         "required": [
           "status",
           "database",
+          "fileOperationsConfigured",
           "timestamp"
         ]
       },
@@ -444,6 +457,389 @@
           "authenticated",
           "isAdmin"
         ]
+      },
+      "AppSettings": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "$ref": "#/components/schemas/SiteSettings",
+            "description": "站点信息设置。"
+          },
+          "features": {
+            "$ref": "#/components/schemas/FeatureSettings",
+            "description": "功能开关。"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ContentSettings",
+            "description": "内容读取与分页设置。"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "设置最后更新时间。"
+          }
+        },
+        "required": [
+          "site",
+          "features",
+          "content",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "SiteSettings": {
+        "type": "object",
+        "properties": {
+          "showName": {
+            "type": "boolean",
+            "description": "首页是否显示站点名称。"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "default": "Moments",
+            "description": "站点名称。"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 280,
+            "default": "",
+            "description": "站点简介。"
+          }
+        },
+        "required": [
+          "showName"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureSettings": {
+        "type": "object",
+        "properties": {
+          "statistics": {
+            "type": "boolean",
+            "description": "统计功能是否启用。"
+          },
+          "random": {
+            "type": "boolean",
+            "description": "随机一天功能是否启用。"
+          },
+          "rss": {
+            "type": "boolean",
+            "description": "RSS 订阅功能是否启用。"
+          }
+        },
+        "required": [
+          "statistics",
+          "random",
+          "rss"
+        ],
+        "additionalProperties": false
+      },
+      "ContentSettings": {
+        "type": "object",
+        "properties": {
+          "public": {
+            "type": "boolean",
+            "description": "未登录访问者是否可以读取内容。"
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "信息流每次加载数量。"
+          }
+        },
+        "required": [
+          "public",
+          "pageSize"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateSettings": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "type": "object",
+            "properties": {
+              "showName": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "default": "Moments"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 280,
+                "default": ""
+              }
+            },
+            "additionalProperties": false
+          },
+          "features": {
+            "type": "object",
+            "properties": {
+              "statistics": {
+                "type": "boolean"
+              },
+              "random": {
+                "type": "boolean"
+              },
+              "rss": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "public": {
+                "type": "boolean"
+              },
+              "pageSize": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompleteBackup": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "备份格式版本。"
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "备份生成时间。"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppSettings",
+            "description": "导出时的应用设置。"
+          },
+          "posts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackupPost"
+            },
+            "description": "全部公开及回收站内容。"
+          }
+        },
+        "required": [
+          "version",
+          "exportedAt",
+          "settings",
+          "posts"
+        ],
+        "additionalProperties": false
+      },
+      "BackupPost": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "稳定的内容 UUID。",
+            "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 1000000,
+            "description": "备份中的正文。"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2048,
+              "format": "uri"
+            },
+            "maxItems": 18,
+            "description": "备份中的有序图片 URL 列表。"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "原始创建时间，ISO 8601 格式。"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "原始更新时间，ISO 8601 格式。"
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "内容是否在创建后编辑过。"
+          },
+          "deletedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "移入回收站的时间；未删除时为 null。"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "images",
+          "createdAt",
+          "updatedAt",
+          "edited",
+          "deletedAt"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupPreview": {
+        "type": "object",
+        "properties": {
+          "totalPosts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "备份中的内容总数。"
+          },
+          "conflictCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "与当前数据库 ID 相同的内容数量。"
+          },
+          "conflictIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "description": "稳定的内容 UUID。",
+              "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
+            },
+            "description": "与当前数据库冲突的内容 UUID。"
+          },
+          "settingsWillBeRestored": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "是否会同时恢复备份中的应用设置。"
+          }
+        },
+        "required": [
+          "totalPosts",
+          "conflictCount",
+          "conflictIds",
+          "settingsWillBeRestored"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupPreviewRequest": {
+        "type": "object",
+        "properties": {
+          "backup": {
+            "$ref": "#/components/schemas/CompleteBackup",
+            "description": "待校验的完整结构化备份。"
+          }
+        },
+        "required": [
+          "backup"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupResult": {
+        "type": "object",
+        "properties": {
+          "restoredPosts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "本次处理的备份内容总数。"
+          },
+          "insertedPosts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "新插入的内容数量。"
+          },
+          "overwrittenPosts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "覆盖的现有内容数量。"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppSettings",
+            "description": "已恢复的应用设置。"
+          }
+        },
+        "required": [
+          "restoredPosts",
+          "insertedPosts",
+          "overwrittenPosts",
+          "settings"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreBackupRequest": {
+        "type": "object",
+        "properties": {
+          "backup": {
+            "$ref": "#/components/schemas/CompleteBackup",
+            "description": "待恢复的完整结构化备份。"
+          },
+          "overwriteConflicts": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否明确授权覆盖相同 ID 的现有内容。"
+          }
+        },
+        "required": [
+          "backup"
+        ],
+        "additionalProperties": false
+      },
+      "ClearPostsResult": {
+        "type": "object",
+        "properties": {
+          "deletedPosts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "已删除的内容数量。"
+          },
+          "deletedImages": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "已删除的托管图片数量。"
+          }
+        },
+        "required": [
+          "deletedPosts",
+          "deletedImages"
+        ],
+        "additionalProperties": false
+      },
+      "ClearPosts": {
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "enum": [
+              "确认清空全部说说"
+            ],
+            "description": "固定的数据清空确认文字。"
+          }
+        },
+        "required": [
+          "confirmation"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -493,9 +889,10 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "default": 20
+              "description": "Page size. When omitted, the configured content page size is used."
             },
             "required": false,
+            "description": "Page size. When omitted, the configured content page size is used.",
             "name": "limit",
             "in": "query"
           },
@@ -546,6 +943,26 @@
           },
           "400": {
             "description": "分页游标无效。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "内容当前未公开。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
             "content": {
               "application/json": {
                 "schema": {
@@ -821,6 +1238,26 @@
               }
             }
           },
+          "401": {
+            "description": "内容当前未公开。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "该功能已关闭。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "当前没有可供随机选择的内容。",
             "content": {
@@ -858,6 +1295,26 @@
               "application/rss+xml": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "内容当前未公开。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "该功能已关闭。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -903,6 +1360,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "内容当前未公开。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1645,6 +2122,561 @@
           },
           "503": {
             "description": "身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/public": {
+      "get": {
+        "operationId": "getPublicSettings",
+        "tags": [
+          "设置"
+        ],
+        "summary": "获取公开的站点、功能和内容设置",
+        "responses": {
+          "200": {
+            "description": "当前非敏感应用设置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "设置尚未初始化。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "tags": [
+          "设置"
+        ],
+        "summary": "获取管理员设置",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前应用设置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "设置或身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateSettings",
+        "tags": [
+          "设置"
+        ],
+        "summary": "更新管理员设置",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的应用设置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "设置内容无效。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "设置或身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/backup": {
+      "get": {
+        "operationId": "createCompleteBackup",
+        "tags": [
+          "数据维护"
+        ],
+        "summary": "结构化导出全部内容与设置",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "完整的结构化备份。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteBackup"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "设置或身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/restore/preview": {
+      "post": {
+        "operationId": "previewBackupRestore",
+        "tags": [
+          "数据维护"
+        ],
+        "summary": "校验备份并预检内容 ID 冲突",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreBackupPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "备份校验结果与当前内容 ID 冲突列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreBackupPreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限，且请求必须来自已配置源站。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "备份请求体过大。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "备份无效或版本不受支持。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/restore": {
+      "post": {
+        "operationId": "restoreBackup",
+        "tags": [
+          "数据维护"
+        ],
+        "summary": "从结构化备份恢复内容与设置",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreBackupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "备份已原子恢复，并已重建派生数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreBackupResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限，且请求必须来自已配置源站。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "存在相同内容 ID，且尚未确认覆盖。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "备份请求体过大。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "备份无效或版本不受支持。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "设置或身份认证尚未配置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/clear-posts": {
+      "post": {
+        "operationId": "clearAllPosts",
+        "tags": [
+          "数据维护"
+        ],
+        "summary": "永久删除全部内容及其托管图片",
+        "security": [
+          {
+            "ClerkBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearPosts"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "全部托管图片与内容均已永久删除。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearPostsResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限，且请求必须来自已配置源站。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "确认文字无效。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器发生意外错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管图片删除失败。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份认证或托管图片删除服务尚未配置。",
             "content": {
               "application/json": {
                 "schema": {

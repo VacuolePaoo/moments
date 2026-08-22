@@ -35,19 +35,26 @@ import {
 } from "./feed-cache";
 import { MomentItem } from "./moment-item";
 import { MomentsShell } from "./moments-shell";
+import { useSiteSettings } from "./site-settings";
 
 export function MomentDateDetail({ date }: { date: string }) {
   const router = useRouter();
-  const { isAdmin, getToken } = useAdminAccess();
+  const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
+  const { settings, isLoading: isSettingsLoading } = useSiteSettings();
   const [initialDetail] = useState(() => readCachedDateDetail(date));
   const [detail, setDetail] = useState<DateDetail | null>(initialDetail);
   const [isLoading, setIsLoading] = useState(initialDetail === null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const contentRequiresAdmin = settings?.content.public === false;
+  const accessChecking = contentRequiresAdmin && isCheckingAdmin;
+  const accessRestricted =
+    contentRequiresAdmin && !isCheckingAdmin && !isAdmin;
+
+  const load = useCallback(async (token?: string) => {
     try {
-      const value = await retryRead(() => getDateDetail(date));
+      const value = await retryRead(() => getDateDetail(date, undefined, token));
       setDetail(value);
       replaceCachedDatePosts(date, value.items);
       setNotFound(false);
@@ -67,14 +74,33 @@ export function MomentDateDetail({ date }: { date: string }) {
   }, [date, initialDetail]);
 
   useEffect(() => {
+    if (isSettingsLoading || !settings) return;
+    if (contentRequiresAdmin && isCheckingAdmin) return;
+    if (accessRestricted) {
+      const timer = window.setTimeout(() => {
+        setDetail(null);
+        setIsLoading(false);
+        setError(null);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
     let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) void load();
-    });
+    void (async () => {
+      const token = contentRequiresAdmin ? await getToken() : undefined;
+      if (!cancelled) void load(token ?? undefined);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [
+    accessRestricted,
+    contentRequiresAdmin,
+    getToken,
+    isCheckingAdmin,
+    isSettingsLoading,
+    load,
+    settings,
+  ]);
 
   function handleUpdated(post: MomentPost) {
     updateCachedPost(post);
@@ -153,9 +179,17 @@ export function MomentDateDetail({ date }: { date: string }) {
   return (
     <MomentsShell>
       <div className="mx-auto w-full max-w-[640px]">
-        {isLoading ? <FeedSkeleton /> : null}
+        {isLoading || isSettingsLoading || accessChecking ? (
+          <FeedSkeleton />
+        ) : null}
 
-        {!isLoading && error ? (
+        {!isSettingsLoading && accessRestricted ? (
+          <p className="text-base leading-6 text-muted-foreground">
+            当前内容未公开
+          </p>
+        ) : null}
+
+        {!isLoading && !accessRestricted && error ? (
           <div className="flex items-center gap-3" role="alert">
             <p className="text-base leading-6 text-muted-foreground">{error}</p>
             <Button
@@ -164,7 +198,12 @@ export function MomentDateDetail({ date }: { date: string }) {
               size="sm"
               onClick={() => {
                 setIsLoading(true);
-                void load();
+                void (async () => {
+                  const token = contentRequiresAdmin
+                    ? await getToken()
+                    : undefined;
+                  await load(token ?? undefined);
+                })();
               }}
             >
               重试
@@ -172,7 +211,7 @@ export function MomentDateDetail({ date }: { date: string }) {
           </div>
         ) : null}
 
-        {!isLoading && notFound ? (
+        {!isLoading && !accessRestricted && notFound ? (
           <div>
             <p className="text-base leading-6 text-muted-foreground">
               当天没有内容
@@ -189,7 +228,7 @@ export function MomentDateDetail({ date }: { date: string }) {
           </div>
         ) : null}
 
-        {!isLoading && detail ? (
+        {!isLoading && !accessRestricted && detail ? (
           <>
             <header className="mb-6 flex items-start justify-between gap-4">
               <h2 className="text-[1.602rem] leading-[1.5] font-semibold">

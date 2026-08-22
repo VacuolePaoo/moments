@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { XIcon } from "lucide-react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, RefObject } from "react";
 
 import {
   Attachment,
@@ -13,8 +13,9 @@ import {
   AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
-  AttachmentTrigger,
 } from "@/components/ui/attachment";
+import { ImageZoom } from "@/components/kibo-ui/image-zoom";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +76,7 @@ function selectEditableImages(
   };
 }
 
-export function handleEditableImageSelection(
+function handleEditableImageSelection(
   event: ChangeEvent<HTMLInputElement>,
   currentCount: number,
   onAccepted: (images: EditableImage[]) => void,
@@ -92,6 +93,30 @@ export function handleEditableImageSelection(
   }
   if (accepted.length > 0) onAccepted(accepted);
   event.target.value = "";
+}
+
+export function EditableImageInput({
+  inputRef,
+  currentCount,
+  onAccepted,
+}: {
+  inputRef: RefObject<HTMLInputElement | null>;
+  currentCount: number;
+  onAccepted: (images: EditableImage[]) => void;
+}) {
+  return (
+    <input
+      ref={inputRef}
+      type="file"
+      accept="image/*"
+      multiple
+      className="sr-only"
+      tabIndex={-1}
+      onChange={(event) =>
+        handleEditableImageSelection(event, currentCount, onAccepted)
+      }
+    />
+  );
 }
 
 export function editableImagesFromUrls(urls: string[]): EditableImage[] {
@@ -113,24 +138,41 @@ export async function uploadEditableImages(
   token: string,
   update: (id: string, values: Partial<EditableImage>) => void,
 ): Promise<string[]> {
-  const urls: string[] = [];
-  for (const image of images) {
-    if (image.url) {
-      urls.push(image.url);
-      continue;
-    }
-    if (!image.file) throw new Error("图片文件已失效，请重新选择。");
+  const urls = new Array<string>(images.length);
+  let nextIndex = 0;
+  let firstError: unknown;
+  const concurrency = Math.min(3, images.length);
 
-    update(image.id, { state: "uploading" });
-    try {
-      const url = await uploadImage(image.file, token);
-      update(image.id, { state: "done", url });
-      urls.push(url);
-    } catch (error) {
-      update(image.id, { state: "error" });
-      throw error;
+  async function worker() {
+    while (firstError === undefined) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const image = images[index];
+      if (!image) return;
+
+      if (image.url) {
+        urls[index] = image.url;
+        continue;
+      }
+      if (!image.file) {
+        firstError = new Error("图片文件已失效，请重新选择。");
+        return;
+      }
+
+      update(image.id, { state: "uploading" });
+      try {
+        const url = await uploadImage(image.file, token);
+        urls[index] = url;
+        update(image.id, { state: "done", url });
+      } catch (error) {
+        update(image.id, { state: "error" });
+        firstError = error;
+      }
     }
   }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  if (firstError !== undefined) throw firstError;
   return urls;
 }
 
@@ -202,43 +244,67 @@ export function MomentImages({
 }) {
   if (images.length === 0) return null;
 
+  if (images.length === 1) {
+    const url = images[0];
+    return url ? (
+      <ZoomableMomentImage url={url} index={0} eager={eager} single />
+    ) : null;
+  }
+
   return (
-    <AttachmentGroup role="group" aria-label="说说图片" tabIndex={0}>
-      {images.map((url, index) => {
-        const name = fileNameFromUrl(url, index);
-        return (
-          <Attachment
+    <ScrollArea
+      className="w-full min-w-0 max-w-full overflow-hidden whitespace-nowrap"
+      aria-label="说说图片"
+    >
+      <div className="flex w-max gap-3 pb-3">
+        {images.map((url, index) => (
+          <ZoomableMomentImage
             key={`${index}-${url}`}
-            orientation="vertical"
-            size="sm"
-            className={cn(
-              images.length === 1 ? "w-64 sm:w-80" : "w-36 sm:w-44",
-            )}
-          >
-            <AttachmentMedia variant="image" className="w-full!">
-              <Image
-                loader={passthroughLoader}
-                unoptimized
-                fill
-                sizes={images.length === 1 ? "320px" : "176px"}
-                src={url}
-                alt={`说说图片 ${index + 1}`}
-                loading={eager && index === 0 ? "eager" : "lazy"}
-              />
-            </AttachmentMedia>
-            <AttachmentTrigger
-              render={
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`查看 ${name}`}
-                />
-              }
-            />
-          </Attachment>
-        );
-      })}
-    </AttachmentGroup>
+            url={url}
+            index={index}
+            eager={eager && index === 0}
+          />
+        ))}
+      </div>
+      <ScrollBar orientation="horizontal" />
+    </ScrollArea>
+  );
+}
+
+function ZoomableMomentImage({
+  url,
+  index,
+  eager,
+  single = false,
+}: {
+  url: string;
+  index: number;
+  eager: boolean;
+  single?: boolean;
+}) {
+  return (
+    <ImageZoom
+      className={cn("shrink-0", single ? "max-w-full" : undefined)}
+      a11yNameButtonZoom={`放大说说图片 ${index + 1}`}
+      a11yNameButtonUnzoom="关闭图片灯箱"
+    >
+      <div
+        className={cn(
+          "relative aspect-4/3 overflow-hidden rounded-lg",
+          single ? "w-64 max-w-full sm:w-80" : "w-36 sm:w-44",
+        )}
+      >
+        <Image
+          loader={passthroughLoader}
+          unoptimized
+          fill
+          sizes={single ? "320px" : "176px"}
+          src={url}
+          alt={`说说图片 ${index + 1}`}
+          className="object-cover"
+          loading={eager ? "eager" : "lazy"}
+        />
+      </div>
+    </ImageZoom>
   );
 }

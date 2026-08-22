@@ -23,11 +23,12 @@ import { createPost, type MomentPost } from "./api";
 import { publishDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
   EditableImageAttachments,
-  handleEditableImageSelection,
+  EditableImageInput,
   releaseEditableImage,
   uploadEditableImages,
   type EditableImage,
 } from "./image-attachments";
+import { useSiteSettings } from "./site-settings";
 
 interface ComposerProps {
   getToken: () => Promise<string | null>;
@@ -37,6 +38,7 @@ interface ComposerProps {
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
   function Composer({ getToken, onCreated, initialContent }, ref) {
+    const { fileUploadConfigured } = useSiteSettings();
     const [content, setContent] = useState("");
     const [images, setImages] = useState<EditableImage[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,36 +159,36 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
         />
 
         <div className="flex items-center justify-between gap-4">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="sr-only"
-            tabIndex={-1}
-            onChange={(event) =>
-              handleEditableImageSelection(event, images.length, (accepted) =>
-                setImages((current) => [...current, ...accepted]),
-              )
-            }
-          />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="添加图片"
-                  disabled={isSubmitting}
-                  onClick={() => fileInputRef.current?.click()}
-                />
-              }
-            >
-              <ImagePlusIcon />
-            </TooltipTrigger>
-            <TooltipContent>添加图片</TooltipContent>
-          </Tooltip>
+          {fileUploadConfigured ? (
+            <>
+              <EditableImageInput
+                inputRef={fileInputRef}
+                currentCount={images.length}
+                onAccepted={(accepted) =>
+                  setImages((current) => [...current, ...accepted])
+                }
+              />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="添加图片"
+                      disabled={isSubmitting}
+                      onClick={() => fileInputRef.current?.click()}
+                    />
+                  }
+                >
+                  <ImagePlusIcon />
+                </TooltipTrigger>
+                <TooltipContent>添加图片</TooltipContent>
+              </Tooltip>
+            </>
+          ) : (
+            <span />
+          )}
 
           <div className="flex items-center gap-3">
             {draftSaved ? (

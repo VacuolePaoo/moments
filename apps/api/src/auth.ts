@@ -77,6 +77,21 @@ async function authenticateContext(
   return userId;
 }
 
+export async function assertAdministrator(
+  c: Context<AppEnv>,
+  verifier: TokenVerifier,
+): Promise<void> {
+  const adminUserId = administratorUserId(c.env);
+  const userId = await authenticateContext(c, verifier);
+  if (userId !== adminUserId) {
+    throw new ApiError(
+      403,
+      "ADMIN_REQUIRED",
+      "Administrator access is required.",
+    );
+  }
+}
+
 export function requireAuthentication(
   verifier: TokenVerifier,
 ): MiddlewareHandler<AppEnv> {
@@ -90,15 +105,7 @@ export function requireAdministrator(
   verifier: TokenVerifier,
 ): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const adminUserId = administratorUserId(c.env);
-    const userId = await authenticateContext(c, verifier);
-    if (userId !== adminUserId) {
-      throw new ApiError(
-        403,
-        "ADMIN_REQUIRED",
-        "Administrator access is required.",
-      );
-    }
+    await assertAdministrator(c, verifier);
     await next();
   };
 }

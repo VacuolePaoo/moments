@@ -8,5 +8,11 @@
     "check": "pnpm --filter @moments/api check",
     "test": "pnpm --filter @moments/api test",
     "openapi:generate": "pnpm --filter @moments/api openapi:generate"
+  },
+  "pnpm": {
+    "overrides": {
+      "nanoid": "3.3.18",
+      "undici": "7.29.0"
+    }
   }
 }

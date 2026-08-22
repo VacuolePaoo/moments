@@ -21,18 +21,22 @@ import { readCachedHomeFeed, writeCachedHomeFeed } from "./feed-cache";
 import { FIRST_MOMENT_CONTENT, FirstMomentGuide } from "./first-moment-guide";
 import { MomentsShell } from "./moments-shell";
 import { PageTitle } from "./page-title";
+import { useSiteSettings } from "./site-settings";
 
-let pendingHomeRequest: ReturnType<typeof listPosts> | null = null;
+let pendingHomeRequest: {
+  key: string;
+  promise: ReturnType<typeof listPosts>;
+} | null = null;
 
-function loadLatestHomeFeed() {
-  if (!pendingHomeRequest) {
-    pendingHomeRequest = retryRead(() => listPosts({ limit: 20 })).finally(
-      () => {
-        pendingHomeRequest = null;
-      },
-    );
+function loadLatestHomeFeed(limit: number, token?: string) {
+  const key = `${String(limit)}:${token ? "private" : "public"}`;
+  if (!pendingHomeRequest || pendingHomeRequest.key !== key) {
+    const promise = retryRead(() => listPosts({ limit }, token)).finally(() => {
+      if (pendingHomeRequest?.promise === promise) pendingHomeRequest = null;
+    });
+    pendingHomeRequest = { key, promise };
   }
-  return pendingHomeRequest;
+  return pendingHomeRequest.promise;
 }
 
 function readHashDate(): string | undefined {
@@ -46,6 +50,7 @@ function readHashDate(): string | undefined {
 
 export function MomentsHome() {
   const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
+  const { settings, isLoading: isSettingsLoading } = useSiteSettings();
   const [posts, setPosts] = useState<MomentPost[]>(
     () => readCachedHomeFeed()?.posts ?? [],
   );
@@ -65,20 +70,26 @@ export function MomentsHome() {
   const [composerInitialContent, setComposerInitialContent] = useState<
     string | undefined
   >();
+  const [focusComposerWhenReady, setFocusComposerWhenReady] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollCompletedFor = useRef<string | null>(null);
   const contentRevision = useRef(0);
 
-  const loadInitial = useCallback(async (anchorDate?: string) => {
+  const pageSize = settings?.content.pageSize ?? 20;
+  const contentRequiresAdmin = settings?.content.public === false;
+
+  const loadInitial = useCallback(async (anchorDate?: string, token?: string) => {
     const revisionAtStart = contentRevision.current;
     const isBackgroundRefresh = !anchorDate && readCachedHomeFeed() !== null;
     try {
       let page = anchorDate
-        ? await retryRead(() => listPosts({ limit: 20, anchorDate }))
-        : await loadLatestHomeFeed();
+        ? await retryRead(() =>
+            listPosts({ limit: pageSize, anchorDate }, token),
+          )
+        : await loadLatestHomeFeed(pageSize, token);
       if (anchorDate && page.items.length === 0) {
-        page = await loadLatestHomeFeed();
+        page = await loadLatestHomeFeed(pageSize, token);
       }
 
       // A publish/edit/delete completed while the refresh was in flight. Its
@@ -103,21 +114,53 @@ export function MomentsHome() {
     } finally {
       setIsInitialLoading(false);
     }
-  }, []);
+  }, [pageSize]);
 
   useEffect(() => {
-    // Post loading and the root admin check intentionally have no dependency
-    // on each other. A microtask satisfies the effect rule without delaying
-    // the request to a later timer task.
+    if (isSettingsLoading) return;
+    if (!settings) {
+      const timer = window.setTimeout(() => {
+        setIsInitialLoading(false);
+        setError("站点配置加载失败，请稍后重试。");
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (contentRequiresAdmin && isCheckingAdmin) return;
+    if (contentRequiresAdmin && !isAdmin) {
+      const timer = window.setTimeout(() => {
+        setPosts([]);
+        setNextCursor(null);
+        setIsInitialLoading(false);
+        setError(null);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
     let cancelled = false;
     const anchorDate = readHashDate();
-    queueMicrotask(() => {
-      if (!cancelled) void loadInitial(anchorDate);
-    });
+    void (async () => {
+      const token = contentRequiresAdmin ? await getToken() : undefined;
+      if (contentRequiresAdmin && !token) {
+        if (!cancelled) {
+          setIsInitialLoading(false);
+          setError("登录状态已失效。");
+        }
+        return;
+      }
+      if (!cancelled) await loadInitial(anchorDate, token ?? undefined);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [loadInitial]);
+  }, [
+    contentRequiresAdmin,
+    getToken,
+    isAdmin,
+    isCheckingAdmin,
+    isSettingsLoading,
+    loadInitial,
+    settings,
+  ]);
 
   useEffect(() => {
     if (isInitialLoading || targetDate !== null || nextCursor === undefined)
@@ -155,8 +198,15 @@ export function MomentsHome() {
     if (!nextCursor || isLoadingMore) return;
     setIsLoadingMore(true);
     try {
+      const token = contentRequiresAdmin ? await getToken() : undefined;
+      if (contentRequiresAdmin && !token) {
+        throw new Error("登录状态已失效。");
+      }
       const page = await retryRead(() =>
-        listPosts({ limit: 20, cursor: nextCursor }),
+        listPosts(
+          { limit: pageSize, cursor: nextCursor },
+          token ?? undefined,
+        ),
       );
       setPosts((current) => mergePosts(current, page.items));
       setNextCursor(page.nextCursor);
@@ -166,7 +216,7 @@ export function MomentsHome() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, nextCursor]);
+  }, [contentRequiresAdmin, getToken, isLoadingMore, nextCursor, pageSize]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -194,8 +244,8 @@ export function MomentsHome() {
     setStarterLeaving(true);
     await finishStarterTransition();
     setComposerInitialContent(FIRST_MOMENT_CONTENT);
+    setFocusComposerWhenReady(true);
     setStarterDismissed(true);
-    window.requestAnimationFrame(() => composerRef.current?.focus());
   }
 
   async function publishStarterContent() {
@@ -273,24 +323,92 @@ export function MomentsHome() {
 
   const hasConfirmedEmpty =
     !isInitialLoading &&
+    !isSettingsLoading &&
     error === null &&
     posts.length === 0 &&
     nextCursor === null;
+  const accessChecking = contentRequiresAdmin && isCheckingAdmin;
+  const accessRestricted =
+    contentRequiresAdmin && !isCheckingAdmin && !isAdmin;
   const showStarter =
     hasConfirmedEmpty && !isCheckingAdmin && isAdmin && !starterDismissed;
-  const showVisitorEmpty = hasConfirmedEmpty && !isCheckingAdmin && !isAdmin;
+  const showVisitorEmpty =
+    hasConfirmedEmpty && !accessRestricted && !isCheckingAdmin && !isAdmin;
   const showComposer =
     isAdmin && !isInitialLoading && (!hasConfirmedEmpty || starterDismissed);
+
+  useEffect(() => {
+    if (!focusComposerWhenReady || !showComposer) return;
+    let frame = 0;
+    let attempts = 0;
+    const focusAfterMount = () => {
+      const composer =
+        composerRef.current ??
+        document.querySelector<HTMLTextAreaElement>("#moment-composer");
+      if (composer && !composer.closest("[inert]")) {
+        composer.focus({ preventScroll: true });
+      }
+      if (composer && document.activeElement === composer) {
+        setFocusComposerWhenReady(false);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 30) {
+        frame = window.requestAnimationFrame(focusAfterMount);
+      }
+    };
+    frame = window.requestAnimationFrame(focusAfterMount);
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusComposerWhenReady, showComposer]);
+
+  useEffect(() => {
+    const startComposer = () => {
+      if (!showStarter) {
+        window.requestAnimationFrame(() => composerRef.current?.focus());
+        return;
+      }
+      void (async () => {
+        setStarterLeaving(true);
+        await finishStarterTransition();
+        setComposerInitialContent(undefined);
+        setFocusComposerWhenReady(true);
+        setStarterDismissed(true);
+      })();
+    };
+    window.addEventListener("moments:start-composer", startComposer);
+    return () =>
+      window.removeEventListener("moments:start-composer", startComposer);
+  }, [showStarter]);
+
+  const showSiteName = settings?.site.showName === true;
+  const siteDescription = settings?.site.description ?? "";
+  const visiblePosts =
+    isSettingsLoading || !settings || accessChecking || accessRestricted
+      ? []
+      : posts;
 
   return (
     <MomentsShell>
       <div className="mx-auto w-full max-w-[640px]">
-        <PageTitle>Moments</PageTitle>
+        {showSiteName || siteDescription ? (
+          <header className="mb-12 flex flex-col gap-2">
+            {showSiteName ? (
+              <PageTitle className="mb-0">
+                {settings?.site.name || "Moments"}
+              </PageTitle>
+            ) : null}
+            {siteDescription ? (
+              <p className="text-base leading-6 text-muted-foreground">
+                {siteDescription}
+              </p>
+            ) : null}
+          </header>
+        ) : null}
 
         <div className="grid">
           <TransitionPresence
             show={showStarter}
-            className="col-start-1 row-start-1"
+            className="col-start-1 row-start-1 min-w-0 max-w-full"
           >
             <FirstMomentGuide
               isLeaving={starterLeaving}
@@ -302,7 +420,7 @@ export function MomentsHome() {
 
           <TransitionPresence
             show={!showStarter}
-            className="col-start-1 row-start-1"
+            className="col-start-1 row-start-1 min-w-0 max-w-full"
           >
             <div>
               <TransitionPresence show={showComposer} collapse>
@@ -322,12 +440,20 @@ export function MomentsHome() {
                 </p>
               </TransitionPresence>
 
+              <TransitionPresence show={accessRestricted}>
+                <p className="text-base leading-6 text-muted-foreground">
+                  当前内容未公开
+                </p>
+              </TransitionPresence>
+
               <Feed
-                posts={posts}
+                posts={visiblePosts}
                 isAdmin={isAdmin}
                 getToken={getToken}
                 highlightDate={highlightDate}
-                isInitialLoading={isInitialLoading}
+                isInitialLoading={
+                  isInitialLoading || isSettingsLoading || accessChecking
+                }
                 isLoadingMore={isLoadingMore}
                 showEmptyMessage={false}
                 error={error}

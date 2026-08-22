@@ -145,14 +145,14 @@ export function MomentsTrash() {
         <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
           <TransitionPresence
             show={isCheckingAdmin || (isAdmin && isLoading)}
-            className="!translate-y-0 !scale-100"
+            className="min-w-0 max-w-full !translate-y-0 !scale-100"
           >
             <FeedSkeleton />
           </TransitionPresence>
 
           <TransitionPresence
             show={!isCheckingAdmin && !isAdmin}
-            className="!translate-y-0 !scale-100"
+            className="min-w-0 max-w-full !translate-y-0 !scale-100"
           >
             <p className="text-base leading-6 text-muted-foreground">
               请使用管理员账号登录
@@ -161,7 +161,7 @@ export function MomentsTrash() {
 
           <TransitionPresence
             show={isAdmin && !isLoading && Boolean(error) && posts.length === 0}
-            className="!translate-y-0 !scale-100"
+            className="min-w-0 max-w-full !translate-y-0 !scale-100"
           >
             <div className="flex items-center gap-3" role="alert">
               <p className="text-base leading-6 text-muted-foreground">
@@ -180,7 +180,7 @@ export function MomentsTrash() {
 
           <TransitionPresence
             show={isAdmin && !isLoading && !error && posts.length === 0}
-            className="!translate-y-0 !scale-100"
+            className="min-w-0 max-w-full !translate-y-0 !scale-100"
           >
             <p className="text-base leading-6 text-muted-foreground">
               回收站是空的
@@ -189,7 +189,7 @@ export function MomentsTrash() {
 
           <TransitionPresence
             show={isAdmin && !isLoading && posts.length > 0}
-            className="!translate-y-0 !scale-100"
+            className="min-w-0 max-w-full !translate-y-0 !scale-100"
           >
             <div>
               {posts.map((post, index) => (

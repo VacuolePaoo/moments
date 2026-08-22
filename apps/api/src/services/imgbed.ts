@@ -41,7 +41,12 @@ function configuredImgBed(env: ImgBedBindings) {
       "Image deletion is not configured.",
     );
   }
-  if (baseUrl.protocol !== "https:" && baseUrl.protocol !== "http:") {
+  const localHttp =
+    baseUrl.protocol === "http:" &&
+    (baseUrl.hostname === "localhost" ||
+      baseUrl.hostname === "127.0.0.1" ||
+      baseUrl.hostname === "[::1]");
+  if (baseUrl.protocol !== "https:" && !localHttp) {
     throw new ApiError(
       503,
       "IMAGE_DELETE_NOT_CONFIGURED",

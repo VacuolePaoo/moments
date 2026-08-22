@@ -36,6 +36,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 import {
   MomentsApiError,
@@ -47,14 +48,15 @@ import { formatPostTime } from "./date";
 import { editDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
   EditableImageAttachments,
+  EditableImageInput,
   MomentImages,
   editableImagesFromUrls,
-  handleEditableImageSelection,
   releaseEditableImage,
   uploadEditableImages,
   type EditableImage,
 } from "./image-attachments";
 import { TextContent } from "./text-content";
+import { useSiteSettings } from "./site-settings";
 
 interface MomentItemProps {
   post: MomentPost;
@@ -100,7 +102,7 @@ function MomentBody({
   eagerImages?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 max-w-full flex-col gap-4">
       <MomentImages images={post.images} eager={eagerImages} />
       {post.content ? <TextContent content={post.content} /> : null}
     </div>
@@ -140,6 +142,7 @@ export function MomentItem({
   onUpdated,
   onDelete,
 }: MomentItemProps) {
+  const { fileUploadConfigured } = useSiteSettings();
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(post.content);
   const [images, setImages] = useState<EditableImage[]>(() =>
@@ -385,36 +388,36 @@ export function MomentItem({
             disabled={isSaving}
           />
           <div className="flex items-center justify-between gap-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="sr-only"
-              tabIndex={-1}
-              onChange={(event) =>
-                handleEditableImageSelection(event, images.length, (accepted) =>
-                  setImages((current) => [...current, ...accepted]),
-                )
-              }
-            />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="添加图片"
-                    disabled={isSaving}
-                    onClick={() => fileInputRef.current?.click()}
-                  />
-                }
-              >
-                <ImagePlusIcon />
-              </TooltipTrigger>
-              <TooltipContent>添加图片</TooltipContent>
-            </Tooltip>
+            {fileUploadConfigured ? (
+              <>
+                <EditableImageInput
+                  inputRef={fileInputRef}
+                  currentCount={images.length}
+                  onAccepted={(accepted) =>
+                    setImages((current) => [...current, ...accepted])
+                  }
+                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="添加图片"
+                        disabled={isSaving}
+                        onClick={() => fileInputRef.current?.click()}
+                      />
+                    }
+                  >
+                    <ImagePlusIcon />
+                  </TooltipTrigger>
+                  <TooltipContent>添加图片</TooltipContent>
+                </Tooltip>
+              </>
+            ) : (
+              <span />
+            )}
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -432,7 +435,7 @@ export function MomentItem({
           </div>
         </form>
       ) : (
-        <div className={isAdmin ? "pr-10" : undefined}>
+        <div className={cn("min-w-0 max-w-full", isAdmin ? "pr-10" : undefined)}>
           <MomentBody post={post} eagerImages={eagerImages} />
           {showEdited && post.edited ? <EditedLabel /> : null}
         </div>

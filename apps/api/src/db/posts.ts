@@ -2,6 +2,7 @@ import { decodeCursor, encodeCursor } from "../lib/cursor";
 import { getShanghaiDayBounds, toShanghaiDate } from "../lib/date";
 import { ApiError } from "../lib/errors";
 import type {
+  CompleteBackup,
   DeletedPost,
   DeletedPostList,
   Post,
@@ -25,6 +26,10 @@ interface PostRow {
 
 interface DeletedPostRow extends PostRow {
   deleted_at: string;
+}
+
+interface BackupPostRow extends PostRow {
+  deleted_at: string | null;
 }
 
 interface IdRow {
@@ -615,6 +620,49 @@ export async function permanentlyDeletePost(
 
   if (deleted !== null) return;
   return throwPostStateError(db, id);
+}
+
+export async function listAllPostsForBackup(
+  db: D1Database,
+): Promise<CompleteBackup["posts"]> {
+  const rows = (
+    await db
+      .prepare(
+        `SELECT ${postColumns}, deleted_at
+         FROM posts
+         ORDER BY created_at ASC, id ASC`,
+      )
+      .all<BackupPostRow>()
+  ).results;
+
+  return rows.map((row) => ({
+    ...toPost(row),
+    deletedAt: row.deleted_at,
+  }));
+}
+
+export async function getAllPostImages(db: D1Database): Promise<string[]> {
+  const rows = (
+    await db.prepare("SELECT images_json FROM posts").all<{
+      images_json: string;
+    }>()
+  ).results;
+  return [...new Set(rows.flatMap((row) => parseImages(row.images_json)))];
+}
+
+export async function clearAllPosts(db: D1Database): Promise<number> {
+  const count =
+    (await db
+      .prepare("SELECT COUNT(*) AS count FROM posts")
+      .first<{ count: number }>())?.count ?? 0;
+  await db.batch([
+    db.prepare("DELETE FROM posts"),
+    db.prepare("DELETE FROM public_post_slots"),
+    db.prepare("DELETE FROM statistics_daily"),
+    db.prepare("DELETE FROM statistics_hourly"),
+    db.prepare("DELETE FROM statistics_meta"),
+  ]);
+  return count;
 }
 
 async function throwPostStateError(db: D1Database, id: string): Promise<never> {

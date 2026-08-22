@@ -22,6 +22,7 @@
     "hooks": "@/hooks"
   },
   "registries": {
-    "@heatmap": "https://shadcn-heatmap.pages.dev/r/{name}.json"
+    "@heatmap": "https://shadcn-heatmap.pages.dev/r/{name}.json",
+    "@kibo-ui": "https://www.kibo-ui.com/r/{name}.json"
   }
 }

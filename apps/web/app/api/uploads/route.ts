@@ -1,7 +1,4 @@
-interface AuthStatus {
-  authenticated: true;
-  isAdmin: boolean;
-}
+import { isSecureEndpoint, workerApiBaseUrl } from "@/lib/worker-api";
 
 interface ImgBedUploadResult {
   src?: unknown;
@@ -12,20 +9,32 @@ function jsonError(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
 }
 
-function workerBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787"
-  ).replace(/\/$/u, "");
+function imgBedBaseUrl(): string | null {
+  const configured = process.env.CFBED_BASE_URL?.replace(/\/+$/u, "");
+  if (!configured) return null;
+  try {
+    const url = new URL(configured);
+    return isSecureEndpoint(url) ? configured : null;
+  } catch {
+    return null;
+  }
 }
 
 async function isAdministrator(token: string): Promise<boolean> {
-  const response = await fetch(`${workerBaseUrl()}/api/v1/auth/me`, {
+  const response = await fetch(`${workerApiBaseUrl()}/api/v1/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
   if (!response.ok) return false;
-  const status = (await response.json()) as AuthStatus;
-  return status.authenticated && status.isAdmin;
+  const status: unknown = await response.json();
+  return (
+    typeof status === "object" &&
+    status !== null &&
+    "authenticated" in status &&
+    status.authenticated === true &&
+    "isAdmin" in status &&
+    status.isAdmin === true
+  );
 }
 
 function resolveUploadedUrl(
@@ -41,9 +50,7 @@ function resolveUploadedUrl(
   if (!value) return null;
   try {
     const url = new URL(value, `${baseUrl}/`);
-    return url.protocol === "https:" || url.protocol === "http:"
-      ? url.toString()
-      : null;
+    return isSecureEndpoint(url) ? url.toString() : null;
   } catch {
     return null;
   }
@@ -62,7 +69,7 @@ export async function POST(request: Request) {
     return jsonError(502, "暂时无法验证管理员身份。");
   }
 
-  const baseUrl = process.env.CFBED_BASE_URL?.replace(/\/$/u, "");
+  const baseUrl = imgBedBaseUrl();
   const apiToken = process.env.CFBED_API_TOKEN;
   if (!baseUrl || !apiToken) {
     return jsonError(503, "图片上传服务尚未配置。");

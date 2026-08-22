@@ -66,9 +66,16 @@ export function renderRss(
   posts: Post[],
   siteOrigin: string,
   generatedAt: Date,
+  site: { name: string; description: string } = {
+    name: "Moments",
+    description: "",
+  },
 ): string {
   const siteUrl = `${siteOrigin}/`;
   const feedUrl = `${siteOrigin}/rss.xml`;
+  const title = site.name || "Moments";
+  const description =
+    site.description || `最近${String(RSS_WINDOW_DAYS)}天的${title}`;
   const items = posts
     .map((post) => {
       const date = toShanghaiDate(post.createdAt);
@@ -86,9 +93,9 @@ export function renderRss(
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Moments</title>
+    <title>${escapeXml(title)}</title>
     <link>${escapeXml(siteUrl)}</link>
-    <description>最近${String(RSS_WINDOW_DAYS)}天的Moments</description>
+    <description>${escapeXml(description)}</description>
     <language>zh-CN</language>
     <lastBuildDate>${generatedAt.toUTCString()}</lastBuildDate>
     <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml" />

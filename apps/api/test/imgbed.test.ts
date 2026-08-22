@@ -17,6 +17,27 @@ function parseJsonBody(init: RequestInit): unknown {
 }
 
 describe("CloudFlare ImgBed deletion", () => {
+  it("rejects insecure remote ImgBed endpoints before sending the token", async () => {
+    let called = false;
+    await expect(
+      deleteImgBedImages(
+        ["http://file.example.com/file/moments/image.png"],
+        {
+          CFBED_BASE_URL: "http://file.example.com",
+          CFBED_API_TOKEN: "test-delete-token",
+        },
+        () => {
+          called = true;
+          return Promise.resolve(Response.json({ success: true }));
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: "IMAGE_DELETE_NOT_CONFIGURED",
+    });
+    expect(called).toBe(false);
+  });
+
   it("extracts only managed file IDs", () => {
     const baseUrl = new URL("https://file.example.com");
     expect(

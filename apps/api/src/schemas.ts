@@ -111,6 +111,142 @@ export const MomentStatisticsSchema = z
 
 export type MomentStatistics = z.infer<typeof MomentStatisticsSchema>;
 
+const SiteSettingsSchema = z
+  .strictObject({
+    showName: z.boolean(),
+    name: z.string().trim().min(1).max(80).default("Moments"),
+    description: z.string().trim().max(280).default(""),
+  })
+  .openapi("SiteSettings");
+
+const FeatureSettingsSchema = z
+  .strictObject({
+    statistics: z.boolean(),
+    random: z.boolean(),
+    rss: z.boolean(),
+  })
+  .openapi("FeatureSettings");
+
+const ContentSettingsSchema = z
+  .strictObject({
+    public: z.boolean(),
+    pageSize: z.number().int().min(1).max(100),
+  })
+  .openapi("ContentSettings");
+
+export const AppSettingsSchema = z
+  .strictObject({
+    site: SiteSettingsSchema,
+    features: FeatureSettingsSchema,
+    content: ContentSettingsSchema,
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .openapi("AppSettings");
+
+export type AppSettings = z.infer<typeof AppSettingsSchema>;
+
+export const UpdateSettingsSchema = z
+  .strictObject({
+    site: SiteSettingsSchema.partial().optional(),
+    features: FeatureSettingsSchema.partial().optional(),
+    content: ContentSettingsSchema.partial().optional(),
+  })
+  .refine(
+    (value) =>
+      value.site !== undefined ||
+      value.features !== undefined ||
+      value.content !== undefined,
+    { message: "At least one settings group is required." },
+  )
+  .openapi("UpdateSettings");
+
+export type UpdateSettings = z.infer<typeof UpdateSettingsSchema>;
+
+const BackupPostSchema = z
+  .strictObject({
+    id: PostIdSchema,
+    content: z.string().max(1_000_000),
+    images: z.array(z.url().max(2_048)).max(18),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+    edited: z.boolean(),
+    deletedAt: z.iso.datetime({ offset: true }).nullable(),
+  })
+  .refine(({ createdAt, updatedAt, edited }) => edited === (updatedAt !== createdAt), {
+    message: "edited must match whether updatedAt differs from createdAt.",
+    path: ["edited"],
+  })
+  .openapi("BackupPost");
+
+export const CompleteBackupSchema = z
+  .strictObject({
+    version: z.literal(1),
+    exportedAt: z.iso.datetime({ offset: true }),
+    settings: AppSettingsSchema,
+    posts: z.array(BackupPostSchema),
+  })
+  .superRefine(({ posts }, context) => {
+    const seen = new Set<string>();
+    posts.forEach((post, index) => {
+      if (!seen.has(post.id)) {
+        seen.add(post.id);
+        return;
+      }
+      context.addIssue({
+        code: "custom",
+        message: "Backup post IDs must be unique.",
+        path: ["posts", index, "id"],
+      });
+    });
+  })
+  .openapi("CompleteBackup");
+
+export type CompleteBackup = z.infer<typeof CompleteBackupSchema>;
+
+export const RestoreBackupPreviewRequestSchema = z
+  .strictObject({ backup: CompleteBackupSchema })
+  .openapi("RestoreBackupPreviewRequest");
+
+export const RestoreBackupPreviewSchema = z
+  .strictObject({
+    totalPosts: z.number().int().nonnegative(),
+    conflictCount: z.number().int().nonnegative(),
+    conflictIds: z.array(PostIdSchema),
+    settingsWillBeRestored: z.literal(true),
+  })
+  .openapi("RestoreBackupPreview");
+
+export const RestoreBackupRequestSchema = z
+  .strictObject({
+    backup: CompleteBackupSchema,
+    overwriteConflicts: z.boolean().default(false),
+  })
+  .openapi("RestoreBackupRequest");
+
+export const RestoreBackupResultSchema = z
+  .strictObject({
+    restoredPosts: z.number().int().nonnegative(),
+    insertedPosts: z.number().int().nonnegative(),
+    overwrittenPosts: z.number().int().nonnegative(),
+    settings: AppSettingsSchema,
+  })
+  .openapi("RestoreBackupResult");
+
+export type RestoreBackupResult = z.infer<typeof RestoreBackupResultSchema>;
+
+export const ClearPostsSchema = z
+  .strictObject({
+    confirmation: z.literal("确认清空全部说说"),
+  })
+  .openapi("ClearPosts");
+
+export const ClearPostsResultSchema = z
+  .strictObject({
+    deletedPosts: z.number().int().nonnegative(),
+    deletedImages: z.number().int().nonnegative(),
+  })
+  .openapi("ClearPostsResult");
+
 export const WritePostSchema = z
   .strictObject({
     content: z.string().default("").openapi({
@@ -157,6 +293,7 @@ export const HealthSchema = z
   .object({
     status: z.literal("ok"),
     database: z.literal("ok"),
+    fileOperationsConfigured: z.boolean(),
     timestamp: z.iso.datetime({ offset: true }),
   })
   .openapi("Health");

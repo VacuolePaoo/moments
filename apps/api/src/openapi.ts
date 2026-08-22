@@ -6,9 +6,9 @@ export const openApiConfig: OpenApi31Config = {
   openapi: "3.1.0",
   info: {
     title: "Moments API",
-    version: "2.0.0",
+    version: "2.1.0",
     description:
-      "Public read and Clerk-protected write API for a personal Moments site. v2 merges date reads into GET /posts (?date=) and serves statistics from incremental aggregates.",
+      "Configurable read and Clerk-protected administration API for a personal Moments site, with D1-backed feature settings and maintenance operations.",
   },
   servers: [{ url: "/" }],
   tags: [
@@ -30,6 +30,14 @@ export const openApiConfig: OpenApi31Config = {
     {
       name: "Authentication",
       description: "Clerk session and administrator status.",
+    },
+    {
+      name: "Settings",
+      description: "Public runtime settings and administrator updates.",
+    },
+    {
+      name: "Maintenance",
+      description: "Administrator backup and destructive data maintenance.",
     },
   ],
 };

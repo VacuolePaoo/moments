@@ -17,6 +17,20 @@ async function clearPosts() {
     env.DB.prepare("DELETE FROM statistics_hourly"),
     env.DB.prepare("DELETE FROM statistics_meta"),
     env.DB.prepare("DELETE FROM public_post_slots"),
+    env.DB.prepare(
+      `UPDATE settings
+       SET
+         show_site_name = 1,
+         site_name = 'Moments',
+         site_description = '',
+         statistics_enabled = 1,
+         random_enabled = 1,
+         rss_enabled = 1,
+         content_public = 1,
+         page_size = 20,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE id = 1`,
+    ),
   ]);
 }
 
@@ -63,6 +77,443 @@ describe("Moments API", () => {
     expect(document.paths).toHaveProperty("/api/v1/trash");
     expect(document.paths).toHaveProperty("/api/v1/trash/{id}");
     expect(document.paths).toHaveProperty("/rss.xml");
+    expect(document.paths).toHaveProperty("/api/v1/settings/public");
+    expect(document.paths).toHaveProperty("/api/v1/settings");
+    expect(document.paths).toHaveProperty("/api/v1/maintenance/backup");
+    expect(document.paths).toHaveProperty(
+      "/api/v1/maintenance/restore/preview",
+    );
+    expect(document.paths).toHaveProperty("/api/v1/maintenance/restore");
+    expect(document.paths).toHaveProperty("/api/v1/maintenance/clear-posts");
+  });
+
+  it("persists administrator settings and exposes only non-sensitive settings publicly", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    const publicResponse = await app.request(
+      "/api/v1/settings/public",
+      {},
+      env,
+    );
+    expect(publicResponse.status).toBe(200);
+    await expect(publicResponse.json()).resolves.toMatchObject({
+      site: { showName: true, name: "Moments", description: "" },
+      features: { statistics: true, random: true, rss: true },
+      content: { public: true, pageSize: 20 },
+    });
+
+    expect(
+      (await createApp().request("/api/v1/settings", {}, env)).status,
+    ).toBe(401);
+
+    const updateResponse = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", {
+        site: {
+          showName: false,
+          name: "我的 Moments",
+          description: "记录每一天",
+        },
+        content: { pageSize: 7 },
+      }),
+      env,
+    );
+    expect(updateResponse.status).toBe(200);
+    await expect(updateResponse.json()).resolves.toMatchObject({
+      site: {
+        showName: false,
+        name: "我的 Moments",
+        description: "记录每一天",
+      },
+      content: { public: true, pageSize: 7 },
+    });
+
+    const persisted = await app.request(
+      "/api/v1/settings",
+      jsonRequest("GET"),
+      env,
+    );
+    await expect(persisted.json()).resolves.toMatchObject({
+      site: { name: "我的 Moments" },
+      content: { pageSize: 7 },
+    });
+  });
+
+  it("enforces feature switches in routes and statistics triggers", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    const disabledResponse = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", {
+        features: { statistics: false, random: false, rss: false },
+      }),
+      env,
+    );
+    expect(disabledResponse.status).toBe(200);
+
+    const created = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "关闭统计后发布" }),
+      env,
+    );
+    expect(created.status).toBe(201);
+    await expect(
+      env.DB.prepare("SELECT COUNT(*) AS count FROM statistics_daily").first(),
+    ).resolves.toEqual({ count: 0 });
+
+    for (const path of ["/api/v1/statistics", "/api/v1/random", "/rss.xml"]) {
+      const response = await app.request(
+        path,
+        path === "/api/v1/statistics" ? jsonRequest("GET") : {},
+        env,
+      );
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "FEATURE_DISABLED" },
+      });
+    }
+
+    const enabledResponse = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", { features: { statistics: true } }),
+      env,
+    );
+    expect(enabledResponse.status).toBe(200);
+    await expect(
+      env.DB.prepare("SELECT post_count FROM statistics_daily").first(),
+    ).resolves.toEqual({ post_count: 1 });
+  });
+
+  it("requires administrator access when content is not public and uses the configured page size", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    for (const content of ["第一条", "第二条", "第三条"]) {
+      expect(
+        (
+          await app.request(
+            "/api/v1/posts",
+            jsonRequest("POST", { content }),
+            env,
+          )
+        ).status,
+      ).toBe(201);
+    }
+
+    await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", { content: { pageSize: 1 } }),
+      env,
+    );
+    const oneItem = await app.request("/api/v1/posts", {}, env);
+    expect(oneItem.status).toBe(200);
+    await expect(oneItem.json()).resolves.toMatchObject({
+      items: [{ content: "第三条" }],
+    });
+
+    await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", { content: { public: false } }),
+      env,
+    );
+    expect((await app.request("/api/v1/posts", {}, env)).status).toBe(401);
+    expect(
+      (
+        await createApp({ tokenVerifier: nonAdminVerifier }).request(
+          "/api/v1/posts",
+          jsonRequest("GET"),
+          env,
+        )
+      ).status,
+    ).toBe(403);
+    const administratorRead = await app.request(
+      "/api/v1/posts",
+      jsonRequest("GET"),
+      env,
+    );
+    expect(administratorRead.status).toBe(200);
+  });
+
+  it("exports a complete backup and clears data only after origin and image deletion checks", async () => {
+    const deletedImages: string[][] = [];
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: (images) => {
+        deletedImages.push(images);
+        return Promise.resolve();
+      },
+    });
+    const image = "https://file.example.com/file/clear.png";
+    await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { content: "等待备份", images: [image] }),
+      env,
+    );
+
+    const backupResponse = await app.request(
+      "/api/v1/maintenance/backup",
+      jsonRequest("GET"),
+      env,
+    );
+    expect(backupResponse.status).toBe(200);
+    await expect(backupResponse.json()).resolves.toMatchObject({
+      version: 1,
+      posts: [{ content: "等待备份", images: [image], deletedAt: null }],
+    });
+
+    const directResponse = await app.request(
+      "/api/v1/maintenance/clear-posts",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ confirmation: "确认清空全部说说" }),
+      },
+      env,
+    );
+    expect(directResponse.status).toBe(403);
+
+    const invalidConfirmation = await app.request(
+      "/api/v1/maintenance/clear-posts",
+      jsonRequest("POST", { confirmation: "清空" }),
+      env,
+    );
+    expect(invalidConfirmation.status).toBe(422);
+
+    const clearResponse = await app.request(
+      "/api/v1/maintenance/clear-posts",
+      jsonRequest("POST", { confirmation: "确认清空全部说说" }),
+      env,
+    );
+    expect(clearResponse.status).toBe(200);
+    await expect(clearResponse.json()).resolves.toEqual({
+      deletedPosts: 1,
+      deletedImages: 1,
+    });
+    expect(deletedImages).toEqual([[image]]);
+    await expect(
+      env.DB.prepare("SELECT COUNT(*) AS count FROM posts").first(),
+    ).resolves.toEqual({ count: 0 });
+  });
+
+  it("previews backup conflicts and restores atomically only after overwrite confirmation", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    const firstId = "11111111-1111-4111-8111-111111111111";
+    const secondId = "22222222-2222-4222-8222-222222222222";
+    const createdAt = "2026-08-20T00:00:00.000Z";
+    const updatedAt = "2026-08-20T01:00:00.000Z";
+    const deletedAt = "2026-08-21T00:00:00.000Z";
+    const backup = {
+      version: 1,
+      exportedAt: "2026-08-22T00:00:00.000Z",
+      settings: {
+        site: {
+          showName: true,
+          name: "备份站点",
+          description: "来自备份",
+        },
+        features: { statistics: true, random: false, rss: true },
+        content: { public: false, pageSize: 12 },
+        updatedAt: "2026-08-22T00:00:00.000Z",
+      },
+      posts: [
+        {
+          id: firstId,
+          content: "备份中的版本",
+          images: [
+            "https://file.example.com/file/first.png",
+            "https://file.example.com/file/second.png",
+          ],
+          createdAt,
+          updatedAt: createdAt,
+          edited: false,
+          deletedAt: null,
+        },
+      ],
+    } as const;
+
+    const noConflictPreview = await app.request(
+      "/api/v1/maintenance/restore/preview",
+      jsonRequest("POST", { backup }),
+      env,
+    );
+    expect(noConflictPreview.status).toBe(200);
+    await expect(noConflictPreview.json()).resolves.toEqual({
+      totalPosts: 1,
+      conflictCount: 0,
+      conflictIds: [],
+      settingsWillBeRestored: true,
+    });
+
+    const firstRestore = await app.request(
+      "/api/v1/maintenance/restore",
+      jsonRequest("POST", { backup, overwriteConflicts: false }),
+      env,
+    );
+    expect(firstRestore.status).toBe(200);
+    await expect(firstRestore.json()).resolves.toMatchObject({
+      restoredPosts: 1,
+      insertedPosts: 1,
+      overwrittenPosts: 0,
+      settings: { site: { name: "备份站点" } },
+    });
+
+    await env.DB.batch([
+      env.DB.prepare("UPDATE posts SET content = ? WHERE id = ?").bind(
+        "数据库中的现有版本",
+        firstId,
+      ),
+      env.DB.prepare("UPDATE settings SET site_name = ? WHERE id = 1").bind(
+        "当前站点",
+      ),
+    ]);
+    const conflictingBackup = {
+      ...backup,
+      posts: [
+        ...backup.posts,
+        {
+          id: secondId,
+          content: "已删除的新增记录",
+          images: [],
+          createdAt,
+          updatedAt,
+          edited: true,
+          deletedAt,
+        },
+      ],
+    };
+
+    const directPreview = await app.request(
+      "/api/v1/maintenance/restore/preview",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ backup: conflictingBackup }),
+      },
+      env,
+    );
+    expect(directPreview.status).toBe(403);
+
+    const conflictPreview = await app.request(
+      "/api/v1/maintenance/restore/preview",
+      jsonRequest("POST", { backup: conflictingBackup }),
+      env,
+    );
+    expect(conflictPreview.status).toBe(200);
+    await expect(conflictPreview.json()).resolves.toEqual({
+      totalPosts: 2,
+      conflictCount: 1,
+      conflictIds: [firstId],
+      settingsWillBeRestored: true,
+    });
+
+    const rejectedRestore = await app.request(
+      "/api/v1/maintenance/restore",
+      jsonRequest("POST", {
+        backup: conflictingBackup,
+        overwriteConflicts: false,
+      }),
+      env,
+    );
+    expect(rejectedRestore.status).toBe(409);
+    await expect(rejectedRestore.json()).resolves.toMatchObject({
+      error: { code: "BACKUP_CONFLICT" },
+    });
+    await expect(
+      env.DB.prepare("SELECT content FROM posts WHERE id = ?")
+        .bind(firstId)
+        .first(),
+    ).resolves.toEqual({ content: "数据库中的现有版本" });
+    await expect(
+      env.DB.prepare("SELECT id FROM posts WHERE id = ?").bind(secondId).first(),
+    ).resolves.toBeNull();
+    await expect(
+      env.DB.prepare("SELECT site_name FROM settings WHERE id = 1").first(),
+    ).resolves.toEqual({ site_name: "当前站点" });
+
+    const confirmedRestore = await app.request(
+      "/api/v1/maintenance/restore",
+      jsonRequest("POST", {
+        backup: conflictingBackup,
+        overwriteConflicts: true,
+      }),
+      env,
+    );
+    expect(confirmedRestore.status).toBe(200);
+    await expect(confirmedRestore.json()).resolves.toMatchObject({
+      restoredPosts: 2,
+      insertedPosts: 1,
+      overwrittenPosts: 1,
+      settings: { site: { name: "备份站点" } },
+    });
+    await expect(
+      env.DB.prepare(
+        "SELECT content, images_json, deleted_at FROM posts WHERE id = ?",
+      )
+        .bind(firstId)
+        .first(),
+    ).resolves.toEqual({
+      content: "备份中的版本",
+      images_json: JSON.stringify(backup.posts[0].images),
+      deleted_at: null,
+    });
+    await expect(
+      env.DB.prepare("SELECT deleted_at FROM posts WHERE id = ?")
+        .bind(secondId)
+        .first(),
+    ).resolves.toEqual({ deleted_at: deletedAt });
+    await expect(
+      env.DB.prepare("SELECT COUNT(*) AS count FROM public_post_slots").first(),
+    ).resolves.toEqual({ count: 1 });
+    await expect(
+      env.DB.prepare("SELECT post_count FROM statistics_daily").first(),
+    ).resolves.toEqual({ post_count: 1 });
+    await expect(
+      env.DB.prepare(
+        "SELECT site_name, random_enabled, content_public, page_size FROM settings WHERE id = 1",
+      ).first(),
+    ).resolves.toEqual({
+      site_name: "备份站点",
+      random_enabled: 0,
+      content_public: 0,
+      page_size: 12,
+    });
+  });
+
+  it("rejects malformed backups before querying or writing D1", async () => {
+    const id = "33333333-3333-4333-8333-333333333333";
+    const timestamp = "2026-08-22T00:00:00.000Z";
+    const post = {
+      id,
+      content: "重复 ID",
+      images: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      edited: false,
+      deletedAt: null,
+    };
+    const response = await createApp({ tokenVerifier: adminVerifier }).request(
+      "/api/v1/maintenance/restore/preview",
+      jsonRequest("POST", {
+        backup: {
+          version: 1,
+          exportedAt: timestamp,
+          settings: {
+            site: { showName: true, name: "Moments", description: "" },
+            features: { statistics: true, random: true, rss: true },
+            content: { public: true, pageSize: 20 },
+            updatedAt: timestamp,
+          },
+          posts: [post, post],
+        },
+      }),
+      env,
+    );
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "VALIDATION_ERROR" },
+    });
   });
 
   it("requires Clerk authentication for writes", async () => {

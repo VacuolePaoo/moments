@@ -12,7 +12,7 @@ pnpm db:migrate:local
 pnpm dev
 ```
 
-Public endpoints work without Clerk configuration. To test authenticated endpoints, replace the placeholders in `.dev.vars` with the Clerk JWT public key and the administrator's immutable Clerk user ID.
+Public endpoints work without Clerk configuration while “内容公开”处于开启状态。关闭后，内容读取接口也要求 Clerk 管理员令牌。要测试鉴权接口，请将 `.dev.vars` 中的占位值替换为 Clerk JWT 公钥和管理员不可变用户 ID。
 
 ## API contract
 
@@ -31,6 +31,13 @@ v2 (breaking) changes:
 - `POST /api/v1/posts` and `PATCH` reject more than 18 image URLs.
 - New `POST /api/v1/statistics/rebuild` (administrator only) recomputes the statistics aggregates from `posts`.
 
+v2.1 adds D1-backed runtime settings and maintenance:
+
+- `GET /api/v1/settings/public` returns non-sensitive site, feature and content settings.
+- Administrator `GET/PATCH /api/v1/settings` persists site information, feature switches, content visibility and default page size.
+- Statistics, random and RSS switches are enforced by the Worker. Migration `0005_create_settings_and_feature_gates.sql` also stops statistics triggers while statistics are disabled; re-enabling statistics rebuilds the aggregates.
+- `GET /api/v1/maintenance/backup` exports all posts and settings. `POST /api/v1/maintenance/clear-posts` requires administrator authentication, the exact configured `Origin`, and the fixed confirmation phrase; hosted images are deleted before D1 rows.
+
 ## Statistics aggregates
 
 After `migrations/0004_derived_data_triggers.sql` is applied, the administrator-only `GET /api/v1/statistics` never scans `posts`. Its normal path reads three small tables created by `migrations/0002_create_statistics.sql` in one statement:
@@ -39,7 +46,7 @@ After `migrations/0004_derived_data_triggers.sql` is applied, the administrator-
 - `statistics_hourly` — post count per hour of day (0–23).
 - `statistics_meta` — rebuild and derived-data schema markers.
 
-Every create, update, soft-delete and restore is now one post mutation. D1 triggers update the statistics in the same SQLite transaction, so direct SQL maintenance cannot bypass the aggregates and readers never observe a post without its matching statistics. All character and image counts use SQLite `length()`/`json_array_length()` in both the triggers and rebuild path. The longest-post query is only rerun when an edit or deletion may have removed the current maximum.
+Every create, update, soft-delete and restore is one post mutation. When statistics are enabled, D1 triggers update the statistics in the same SQLite transaction, so direct SQL maintenance cannot bypass the aggregates and readers never observe a post without its matching statistics. Migration 0005 gates only the statistics triggers while keeping random slots correct. All character and image counts use SQLite `length()`/`json_array_length()` in both the triggers and rebuild path. The longest-post query is only rerun when an edit or deletion may have removed the current maximum.
 
 `migrations/0003_create_public_post_slots.sql` creates `public_post_slots`, a dense `1..N` mapping maintained by the triggers in migration 0004. `GET /api/v1/random` samples one primary-key slot and retrieves that date and its navigation in one query; it no longer performs `COUNT(*) + OFFSET` over `posts`. Date detail and navigation are likewise returned by one query.
 
@@ -47,7 +54,7 @@ During the short Worker-first upgrade window, before migration 0004 exists, stat
 
 Rebuild sources:
 
-- `POST /api/v1/statistics/rebuild` (administrator bearer token) recomputes everything from `posts` and returns fresh statistics. The statistics page exposes this as a "重新计算统计数据" button for signed-in administrators.
+- `POST /api/v1/statistics/rebuild` (administrator bearer token) recomputes everything from `posts` and returns fresh statistics. The settings page exposes this operation in “系统 / 数据库操作” and beside the enabled statistics switch.
 - `migrations/0004_derived_data_triggers.sql` backfills all aggregates and random slots before enabling the version marker.
 
 ## D1 usage and cache consistency
@@ -66,11 +73,11 @@ Public read endpoints (`/api/v1/posts`, `/api/v1/random`) are unauthenticated an
 
 Rules live in the dashboard, not in `wrangler.jsonc`.
 
-## Upgrading an existing deployment to v2
+## Upgrading an existing deployment
 
 1. From the repository root run `pnpm deploy:api`. Keep the complete command intact: Wrangler deploys the compatibility-aware Worker, then applies every pending migration. Already applied migrations are skipped.
 2. Deploy the web app (Vercel). The frontend now calls `GET /api/v1/posts?date=...` instead of `/api/v1/dates/...`, so deploy the Worker first to avoid a window of 404s.
-3. Optionally call the administrator-only rebuild endpoint once as a verification step. Migration 0004 already backfills the data, so this is not required for correctness.
+3. Open the administrator settings page after deployment. Migration 0005 creates default settings with all existing features and public content enabled, so the upgrade preserves prior behavior.
 
 No new environment variable is required. The schema migration is required and is applied by `pnpm deploy:api`; no manual data conversion is needed. The D1 snapshot/backup policy for your deployment should still be followed before any production migration.
 

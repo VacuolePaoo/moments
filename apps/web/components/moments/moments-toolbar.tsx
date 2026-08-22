@@ -29,6 +29,7 @@ import {
   type DateDetail,
 } from "./api";
 import { RandomMomentDialog } from "./random-moment-dialog";
+import { useSiteSettings } from "./site-settings";
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -73,7 +74,8 @@ function ToolbarButton({
 export function MomentsToolbar() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAdmin, isCheckingAdmin } = useAdminAccess();
+  const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
+  const { settings, isLoading: isSettingsLoading } = useSiteSettings();
   const [randomOpen, setRandomOpen] = useState(false);
   const [randomDetail, setRandomDetail] = useState<DateDetail | null>(null);
   const [isRandomLoading, setIsRandomLoading] = useState(false);
@@ -85,20 +87,23 @@ export function MomentsToolbar() {
       return;
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
-    window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLTextAreaElement>("#moment-composer")
-        ?.focus({ preventScroll: true });
-    });
+    window.dispatchEvent(new Event("moments:start-composer"));
   };
   const openStatistics = () => router.push("/statistics");
   const openTrash = () => router.push("/trash");
+  const openSettings = () => router.push("/settings");
 
   async function loadRandom(openWhenReady: boolean) {
     if (isRandomLoading) return;
     setIsRandomLoading(true);
     try {
-      const detail = await retryRead(() => getRandomMomentDate());
+      const token = settings?.content.public ? undefined : await getToken();
+      if (settings?.content.public === false && !token) {
+        throw new Error("登录状态已失效。");
+      }
+      const detail = await retryRead(() =>
+        getRandomMomentDate(undefined, token ?? undefined),
+      );
       setRandomDetail(detail);
       if (openWhenReady) setRandomOpen(true);
     } catch (error) {
@@ -107,6 +112,9 @@ export function MomentsToolbar() {
         description:
           error instanceof MomentsApiError && error.status === 404
             ? "还没有可随机展示的内容"
+            : error instanceof MomentsApiError &&
+                error.code === "FEATURE_DISABLED"
+              ? "随机一天功能已关闭"
             : "随机内容加载失败，请稍后重试。",
       });
     } finally {
@@ -118,7 +126,7 @@ export function MomentsToolbar() {
     <>
       <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4 md:top-auto md:bottom-6">
         <TransitionPresence
-          show={!isCheckingAdmin}
+          show={!isCheckingAdmin && !isSettingsLoading && settings !== null}
           className="pointer-events-auto"
         >
           <nav aria-label="主要操作" className="flex items-center gap-3">
@@ -131,19 +139,22 @@ export function MomentsToolbar() {
                 icon={isCreateAction ? PlusIcon : HouseIcon}
                 onClick={openHome}
               />
-              {isAdmin ? (
+              {isAdmin && settings?.features.statistics ? (
                 <ToolbarButton
                   label="统计信息"
                   icon={CalendarDaysIcon}
                   onClick={openStatistics}
                 />
               ) : null}
-              <ToolbarButton
-                label={isRandomLoading ? "正在获取随机内容" : "随机"}
-                icon={DicesIcon}
-                disabled={isRandomLoading}
-                onClick={() => void loadRandom(true)}
-              />
+              {settings?.features.random &&
+              (settings.content.public || isAdmin) ? (
+                <ToolbarButton
+                  label={isRandomLoading ? "正在获取随机内容" : "随机"}
+                  icon={DicesIcon}
+                  disabled={isRandomLoading}
+                  onClick={() => void loadRandom(true)}
+                />
+              ) : null}
               <div
                 aria-hidden={!isAdmin}
                 inert={!isAdmin ? true : undefined}
@@ -158,7 +169,11 @@ export function MomentsToolbar() {
                   icon={Trash2Icon}
                   onClick={openTrash}
                 />
-                <ToolbarButton label="设置" icon={SettingsIcon} reserved />
+                <ToolbarButton
+                  label="设置"
+                  icon={SettingsIcon}
+                  onClick={openSettings}
+                />
               </div>
             </ButtonGroup>
 

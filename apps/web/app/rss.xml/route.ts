@@ -1,13 +1,9 @@
-function workerBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787"
-  ).replace(/\/$/u, "");
-}
+import { workerApiBaseUrl } from "@/lib/worker-api";
 
 export async function GET() {
   let response: Response;
   try {
-    response = await fetch(`${workerBaseUrl()}/rss.xml`, {
+    response = await fetch(`${workerApiBaseUrl()}/rss.xml`, {
       headers: { Accept: "application/rss+xml" },
       cache: "no-store",
     });
@@ -15,8 +11,20 @@ export async function GET() {
     return new Response("RSS 服务暂时不可用。", { status: 502 });
   }
 
-  if (!response.ok || response.body === null) {
+  if (response.body === null) {
     return new Response("RSS 服务暂时不可用。", { status: 502 });
+  }
+
+  if (!response.ok) {
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        "Content-Type":
+          response.headers.get("Content-Type") ??
+          "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
   }
 
   return new Response(response.body, {

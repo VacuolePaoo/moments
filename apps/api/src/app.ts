@@ -1,7 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
 
 import {
+  assertAdministrator,
   administratorUserId,
   requireAdministrator,
   requireAdministratorForMethods,
@@ -9,13 +11,20 @@ import {
   verifyClerkSession,
 } from "./auth";
 import {
+  previewBackupRestore,
+  restoreBackup,
+} from "./db/backup";
+import {
   assertPostImageAttached,
+  clearAllPosts,
   createPost,
+  getAllPostImages,
   getDateDetail,
   getDeletedPostImages,
   getPostDetail,
   getRandomDateDetail,
   listDeletedPosts,
+  listAllPostsForBackup,
   listPosts,
   listPostsInWindow,
   permanentlyDeletePost,
@@ -24,6 +33,11 @@ import {
   softDeletePost,
   updatePost,
 } from "./db/posts";
+import {
+  assertFeatureEnabled,
+  getAppSettings,
+  updateAppSettings,
+} from "./db/settings";
 import {
   getMomentStatistics,
   rebuildStatisticsAggregates,
@@ -39,7 +53,11 @@ import {
   rssWindowBounds,
 } from "./services/rss";
 import {
+  AppSettingsSchema,
   AuthStatusSchema,
+  ClearPostsResultSchema,
+  ClearPostsSchema,
+  CompleteBackupSchema,
   DeletePostImageSchema,
   DeletedPostListSchema,
   ErrorSchema,
@@ -49,9 +67,15 @@ import {
   PostIdSchema,
   PostListSchema,
   PostSchema,
+  RestoreBackupPreviewRequestSchema,
+  RestoreBackupPreviewSchema,
+  RestoreBackupRequestSchema,
+  RestoreBackupResultSchema,
   ShanghaiDateSchema,
+  UpdateSettingsSchema,
   WritePostSchema,
 } from "./schemas";
+import type { AppSettings } from "./schemas";
 import type { AppEnv, ImageDeleter, TokenVerifier } from "./types";
 
 const jsonContent = <T extends z.ZodType>(schema: T) => ({
@@ -93,6 +117,15 @@ async function withCursorError<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+async function assertContentAccess(
+  c: Context<AppEnv>,
+  settings: AppSettings,
+  verifier: TokenVerifier,
+): Promise<void> {
+  if (settings.content.public) return;
+  await assertAdministrator(c, verifier);
+}
+
 const securityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("requestId", crypto.randomUUID());
   await next();
@@ -110,7 +143,9 @@ const corsAndOriginGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
   const path = c.req.path;
   const isPrivateRead =
     path === "/api/v1/auth/me" ||
-    path === "/api/v1/statistics" ||
+    path === "/api/v1/settings" ||
+    path.startsWith("/api/v1/maintenance/") ||
+    path.startsWith("/api/v1/statistics") ||
     path === "/api/v1/trash" ||
     path.startsWith("/api/v1/trash/");
   const isPublicRead = c.req.method === "GET" && !isPrivateRead;
@@ -166,7 +201,10 @@ const listPostsRoute = createRoute({
   summary: "List posts, or return every post of one Asia/Shanghai date",
   request: {
     query: z.object({
-      limit: z.coerce.number().int().min(1).max(100).default(20),
+      limit: z.coerce.number().int().min(1).max(100).optional().openapi({
+        description:
+          "Page size. When omitted, the configured content page size is used.",
+      }),
       cursor: z.string().min(1).optional(),
       anchorDate: ShanghaiDateSchema.optional().openapi({
         description:
@@ -185,6 +223,8 @@ const listPostsRoute = createRoute({
       content: jsonContent(PostListSchema),
     },
     400: errorResponseDefinition("Invalid pagination cursor."),
+    401: errorResponseDefinition("Content is not public."),
+    403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("The requested date has no posts."),
     422: errorResponseDefinition("Invalid query parameters."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -241,6 +281,8 @@ const getRandomDateRoute = createRoute({
       description: "The randomly selected Asia/Shanghai date and its posts.",
       content: jsonContent(PostListSchema),
     },
+    401: errorResponseDefinition("Content is not public."),
+    403: errorResponseDefinition("The feature is disabled."),
     404: errorResponseDefinition("There are no posts to pick."),
     500: errorResponseDefinition("Unexpected server error."),
   },
@@ -257,6 +299,8 @@ const getRssRoute = createRoute({
       description: "An RSS 2.0 XML document containing public posts.",
       content: rssContent(z.string()),
     },
+    401: errorResponseDefinition("Content is not public."),
+    403: errorResponseDefinition("The feature is disabled."),
     500: errorResponseDefinition("Unexpected server error."),
   },
 });
@@ -273,6 +317,8 @@ const getPostRoute = createRoute({
       description: "Post detail.",
       content: jsonContent(PostDetailSchema),
     },
+    401: errorResponseDefinition("Content is not public."),
+    403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
     422: errorResponseDefinition("Invalid post ID."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -459,6 +505,178 @@ const authStatusRoute = createRoute({
   },
 });
 
+const MAX_RESTORE_BODY_SIZE = 16 * 1024 * 1024;
+
+function assertConfiguredOrigin(c: Context<AppEnv>): void {
+  if (c.req.header("Origin") === c.env.ALLOWED_ORIGIN) return;
+  throw new ApiError(
+    403,
+    "ORIGIN_REQUIRED",
+    "This operation is only allowed from the configured origin.",
+  );
+}
+
+const getPublicSettingsRoute = createRoute({
+  method: "get",
+  path: "/api/v1/settings/public",
+  operationId: "getPublicSettings",
+  tags: ["Settings"],
+  summary: "Get public site, feature and content settings",
+  responses: {
+    200: {
+      description: "Current non-sensitive application settings.",
+      content: jsonContent(AppSettingsSchema),
+    },
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Settings are not initialized."),
+  },
+});
+
+const getSettingsRoute = createRoute({
+  method: "get",
+  path: "/api/v1/settings",
+  operationId: "getSettings",
+  tags: ["Settings"],
+  summary: "Get administrator settings",
+  security: [{ ClerkBearer: [] }],
+  responses: {
+    200: {
+      description: "Current application settings.",
+      content: jsonContent(AppSettingsSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Settings or authentication are not configured."),
+  },
+});
+
+const updateSettingsRoute = createRoute({
+  method: "patch",
+  path: "/api/v1/settings",
+  operationId: "updateSettings",
+  tags: ["Settings"],
+  summary: "Update administrator settings",
+  security: [{ ClerkBearer: [] }],
+  request: {
+    body: { required: true, content: jsonContent(UpdateSettingsSchema) },
+  },
+  responses: {
+    200: {
+      description: "Updated application settings.",
+      content: jsonContent(AppSettingsSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    422: errorResponseDefinition("Invalid settings."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Settings or authentication are not configured."),
+  },
+});
+
+const createBackupRoute = createRoute({
+  method: "get",
+  path: "/api/v1/maintenance/backup",
+  operationId: "createCompleteBackup",
+  tags: ["Maintenance"],
+  summary: "Export a structured backup of all posts and settings",
+  security: [{ ClerkBearer: [] }],
+  responses: {
+    200: {
+      description: "Complete structured backup.",
+      content: jsonContent(CompleteBackupSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access required."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Settings or authentication are not configured."),
+  },
+});
+
+const previewBackupRestoreRoute = createRoute({
+  method: "post",
+  path: "/api/v1/maintenance/restore/preview",
+  operationId: "previewBackupRestore",
+  tags: ["Maintenance"],
+  summary: "Validate a backup and preview post ID conflicts",
+  security: [{ ClerkBearer: [] }],
+  request: {
+    body: {
+      required: true,
+      content: jsonContent(RestoreBackupPreviewRequestSchema),
+    },
+  },
+  responses: {
+    200: {
+      description: "Validated backup and current post ID conflicts.",
+      content: jsonContent(RestoreBackupPreviewSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition(
+      "Administrator access and the configured origin are required.",
+    ),
+    413: errorResponseDefinition("The backup payload is too large."),
+    422: errorResponseDefinition("The backup is invalid or unsupported."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Authentication is not configured."),
+  },
+});
+
+const restoreBackupRoute = createRoute({
+  method: "post",
+  path: "/api/v1/maintenance/restore",
+  operationId: "restoreBackup",
+  tags: ["Maintenance"],
+  summary: "Restore posts and settings from a structured backup",
+  security: [{ ClerkBearer: [] }],
+  request: {
+    body: { required: true, content: jsonContent(RestoreBackupRequestSchema) },
+  },
+  responses: {
+    200: {
+      description: "Backup restored atomically, including derived data.",
+      content: jsonContent(RestoreBackupResultSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition(
+      "Administrator access and the configured origin are required.",
+    ),
+    409: errorResponseDefinition(
+      "Existing post IDs conflict and overwrite was not confirmed.",
+    ),
+    413: errorResponseDefinition("The backup payload is too large."),
+    422: errorResponseDefinition("The backup is invalid or unsupported."),
+    500: errorResponseDefinition("Unexpected server error."),
+    503: errorResponseDefinition("Settings or authentication are not configured."),
+  },
+});
+
+const clearPostsRoute = createRoute({
+  method: "post",
+  path: "/api/v1/maintenance/clear-posts",
+  operationId: "clearAllPosts",
+  tags: ["Maintenance"],
+  summary: "Permanently delete all posts and their managed images",
+  security: [{ ClerkBearer: [] }],
+  request: {
+    body: { required: true, content: jsonContent(ClearPostsSchema) },
+  },
+  responses: {
+    200: {
+      description: "All hosted images and posts were permanently deleted.",
+      content: jsonContent(ClearPostsResultSchema),
+    },
+    401: errorResponseDefinition("Authentication required."),
+    403: errorResponseDefinition("Administrator access and the configured origin are required."),
+    422: errorResponseDefinition("The confirmation phrase is invalid."),
+    500: errorResponseDefinition("Unexpected server error."),
+    502: errorResponseDefinition("Hosted image deletion failed."),
+    503: errorResponseDefinition(
+      "Authentication or hosted image deletion is not configured.",
+    ),
+  },
+});
+
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
@@ -516,6 +734,22 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("/api/v1/trash/*", requireAdmin);
   app.use("/api/v1/statistics", requireAdmin);
   app.use("/api/v1/statistics/*", requireAdmin);
+  app.use("/api/v1/settings", requireAdmin);
+  app.use("/api/v1/maintenance/*", requireAdmin);
+  const restoreBodyLimit = bodyLimit({
+    maxSize: MAX_RESTORE_BODY_SIZE,
+    onError: (c) =>
+      c.json(
+        errorBody(
+          String(c.get("requestId")),
+          "PAYLOAD_TOO_LARGE",
+          "The backup payload is too large.",
+        ),
+        413,
+      ),
+  });
+  app.use("/api/v1/maintenance/restore/preview", restoreBodyLimit);
+  app.use("/api/v1/maintenance/restore", restoreBodyLimit);
 
   app.openapi(healthRoute, async (c) => {
     await c.env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
@@ -523,6 +757,9 @@ export function createApp(options: CreateAppOptions = {}) {
       {
         status: "ok" as const,
         database: "ok" as const,
+        fileOperationsConfigured:
+          typeof c.env.CFBED_BASE_URL === "string" &&
+          c.env.CFBED_BASE_URL.length > 0,
         timestamp: new Date().toISOString(),
       },
       200,
@@ -531,6 +768,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.openapi(listPostsRoute, async (c) => {
     const { limit, cursor, anchorDate, date } = c.req.valid("query");
+    const settings = await getAppSettings(c.env.DB);
+    await assertContentAccess(c, settings, tokenVerifier);
     if (
       [cursor, anchorDate, date].filter((value) => value !== undefined).length >
       1
@@ -549,21 +788,33 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     return c.json(
       await withCursorError(() =>
-        listPosts(c.env.DB, limit, cursor, anchorDate),
+        listPosts(
+          c.env.DB,
+          limit ?? settings.content.pageSize,
+          cursor,
+          anchorDate,
+        ),
       ),
       200,
     );
   });
 
   app.openapi(getStatisticsRoute, async (c) => {
+    const settings = await getAppSettings(c.env.DB);
+    assertFeatureEnabled(settings.features.statistics, "statistics");
     return c.json(await getMomentStatistics(c.env.DB), 200);
   });
 
   app.openapi(rebuildStatisticsRoute, async (c) => {
+    const settings = await getAppSettings(c.env.DB);
+    assertFeatureEnabled(settings.features.statistics, "statistics");
     return c.json(await rebuildStatisticsAggregates(c.env.DB), 200);
   });
 
   app.openapi(getRandomDateRoute, async (c) => {
+    const settings = await getAppSettings(c.env.DB);
+    assertFeatureEnabled(settings.features.random, "random");
+    await assertContentAccess(c, settings, tokenVerifier);
     return c.json(
       { ...(await getRandomDateDetail(c.env.DB)), nextCursor: null },
       200,
@@ -571,16 +822,21 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(getRssRoute, async (c) => {
+    const settings = await getAppSettings(c.env.DB);
+    assertFeatureEnabled(settings.features.rss, "rss");
+    await assertContentAccess(c, settings, tokenVerifier);
     const now = new Date();
     const { startAt, endAt } = rssWindowBounds(now);
     const posts = await listPostsInWindow(c.env.DB, startAt, endAt);
     const siteOrigin = canonicalSiteOrigin(c.env.ALLOWED_ORIGIN, c.req.url);
-    return c.body(renderRss(posts, siteOrigin, now), 200, {
+    return c.body(renderRss(posts, siteOrigin, now, settings.site), 200, {
       "Content-Type": "application/rss+xml; charset=utf-8",
     });
   });
 
   app.openapi(getPostRoute, async (c) => {
+    const settings = await getAppSettings(c.env.DB);
+    await assertContentAccess(c, settings, tokenVerifier);
     return c.json(await getPostDetail(c.env.DB, c.req.valid("param").id), 200);
   });
 
@@ -638,6 +894,74 @@ export function createApp(options: CreateAppOptions = {}) {
         authenticated: true as const,
         isAdmin: c.get("authenticatedUserId") === adminUserId,
       },
+      200,
+    );
+  });
+
+  app.openapi(getPublicSettingsRoute, async (c) => {
+    return c.json(await getAppSettings(c.env.DB), 200);
+  });
+
+  app.openapi(getSettingsRoute, async (c) => {
+    return c.json(await getAppSettings(c.env.DB), 200);
+  });
+
+  app.openapi(updateSettingsRoute, async (c) => {
+    const current = await getAppSettings(c.env.DB);
+    const updated = await updateAppSettings(c.env.DB, c.req.valid("json"));
+    if (
+      !current.features.statistics &&
+      updated.features.statistics
+    ) {
+      await rebuildStatisticsAggregates(c.env.DB);
+    }
+    return c.json(updated, 200);
+  });
+
+  app.openapi(createBackupRoute, async (c) => {
+    const [settings, posts] = await Promise.all([
+      getAppSettings(c.env.DB),
+      listAllPostsForBackup(c.env.DB),
+    ]);
+    return c.json(
+      {
+        version: 1 as const,
+        exportedAt: new Date().toISOString(),
+        settings,
+        posts,
+      },
+      200,
+    );
+  });
+
+  app.openapi(previewBackupRestoreRoute, async (c) => {
+    assertConfiguredOrigin(c);
+    return c.json(
+      await previewBackupRestore(c.env.DB, c.req.valid("json").backup),
+      200,
+    );
+  });
+
+  app.openapi(restoreBackupRoute, async (c) => {
+    assertConfiguredOrigin(c);
+    const { backup, overwriteConflicts } = c.req.valid("json");
+    return c.json(
+      await restoreBackup(c.env.DB, backup, overwriteConflicts),
+      200,
+    );
+  });
+
+  app.openapi(clearPostsRoute, async (c) => {
+    assertConfiguredOrigin(c);
+
+    c.req.valid("json");
+    const images = await getAllPostImages(c.env.DB);
+    for (let index = 0; index < images.length; index += 500) {
+      await imageDeleter(images.slice(index, index + 500), c.env);
+    }
+    const deletedPosts = await clearAllPosts(c.env.DB);
+    return c.json(
+      { deletedPosts, deletedImages: images.length },
       200,
     );
   });

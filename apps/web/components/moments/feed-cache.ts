@@ -16,6 +16,10 @@ export function writeCachedHomeFeed(feed: CachedHomeFeed): void {
   cachedHomeFeed = feed;
 }
 
+export function clearCachedHomeFeed(): void {
+  cachedHomeFeed = null;
+}
+
 export function readCachedDateDetail(date: string): DateDetail | null {
   if (!cachedHomeFeed) return null;
 

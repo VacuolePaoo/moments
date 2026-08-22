@@ -3,13 +3,15 @@ type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 
 const translations: Readonly<Record<string, string>> = {
   "Moments API": "Moments API（中文）",
-  "Public read and Clerk-protected write API for a personal Moments site. v2 merges date reads into GET /posts (?date=) and serves statistics from incremental aggregates.":
-    "Moments 个人内容站点 API：公开读取，写操作由 Clerk 管理员鉴权保护。v2 将日期读取合并进 GET /posts（?date=），统计改由增量聚合表提供。",
+  "Configurable read and Clerk-protected administration API for a personal Moments site, with D1-backed feature settings and maintenance operations.":
+    "Moments 个人内容站点 API：读取权限可配置，管理操作由 Clerk 鉴权保护，功能设置与维护能力由 D1 提供。",
   System: "系统",
   Posts: "内容",
   Statistics: "统计",
   Trash: "回收站",
   Authentication: "身份认证",
+  Settings: "设置",
+  Maintenance: "数据维护",
   "Service metadata and health.": "服务元数据与健康状态。",
   "Public post reads (feed, date mode, random) and administrator mutations.":
     "公开读取内容（信息流、日期模式、随机回顾），以及管理员创建、编辑和删除内容。",
@@ -17,6 +19,10 @@ const translations: Readonly<Record<string, string>> = {
     "发布统计聚合数据与管理员维护操作。",
   "Administrator recycle bin management.": "管理员回收站管理。",
   "Clerk session and administrator status.": "Clerk 会话与管理员状态。",
+  "Public runtime settings and administrator updates.":
+    "公开运行设置与管理员设置更新。",
+  "Administrator backup and destructive data maintenance.":
+    "管理员备份与破坏性数据维护操作。",
   "Clerk session JWT": "Clerk 会话 JWT",
   "Clerk session token returned by getToken().":
     "Clerk getToken() 返回的会话令牌。请在请求头中填写 Authorization: Bearer <token>。",
@@ -56,6 +62,18 @@ const translations: Readonly<Record<string, string>> = {
   "Get an RSS 2.0 feed for the most recent 20 Shanghai calendar days":
     "获取最近 20 个亚洲/上海自然日的 RSS 2.0 订阅源",
   "Get authenticated administrator status": "获取当前用户的管理员状态",
+  "Get public site, feature and content settings":
+    "获取公开的站点、功能和内容设置",
+  "Get administrator settings": "获取管理员设置",
+  "Update administrator settings": "更新管理员设置",
+  "Export a structured backup of all posts and settings":
+    "结构化导出全部内容与设置",
+  "Validate a backup and preview post ID conflicts":
+    "校验备份并预检内容 ID 冲突",
+  "Restore posts and settings from a structured backup":
+    "从结构化备份恢复内容与设置",
+  "Permanently delete all posts and their managed images":
+    "永久删除全部内容及其托管图片",
   "The Worker can query D1.": "Worker 可以正常查询 D1。",
   "D1 is unavailable.": "D1 当前不可用。",
   "A newest-first cursor page, or a full day with navigation in date mode.":
@@ -100,6 +118,29 @@ const translations: Readonly<Record<string, string>> = {
   "Authentication or hosted image deletion is not configured.":
     "身份认证或托管图片删除服务尚未配置。",
   "Authentication status.": "当前用户的身份认证与管理员状态。",
+  "Current non-sensitive application settings.": "当前非敏感应用设置。",
+  "Current application settings.": "当前应用设置。",
+  "Updated application settings.": "更新后的应用设置。",
+  "Complete structured backup.": "完整的结构化备份。",
+  "Validated backup and current post ID conflicts.":
+    "备份校验结果与当前内容 ID 冲突列表。",
+  "Backup restored atomically, including derived data.":
+    "备份已原子恢复，并已重建派生数据。",
+  "The backup payload is too large.": "备份请求体过大。",
+  "The backup is invalid or unsupported.": "备份无效或版本不受支持。",
+  "Existing post IDs conflict and overwrite was not confirmed.":
+    "存在相同内容 ID，且尚未确认覆盖。",
+  "All hosted images and posts were permanently deleted.":
+    "全部托管图片与内容均已永久删除。",
+  "Content is not public.": "内容当前未公开。",
+  "The feature is disabled.": "该功能已关闭。",
+  "Settings are not initialized.": "设置尚未初始化。",
+  "Invalid settings.": "设置内容无效。",
+  "The confirmation phrase is invalid.": "确认文字无效。",
+  "Administrator access and the configured origin are required.":
+    "需要管理员权限，且请求必须来自已配置源站。",
+  "Settings or authentication are not configured.":
+    "设置或身份认证尚未配置。",
 };
 
 const schemaPropertyDescriptions: Readonly<
@@ -108,6 +149,7 @@ const schemaPropertyDescriptions: Readonly<
   Health: {
     status: "Worker 健康状态。",
     database: "D1 数据库健康状态。",
+    fileOperationsConfigured: "Worker 是否配置了图床地址。",
     timestamp: "服务器生成响应时的 ISO 8601 时间。",
   },
   Error: {
@@ -169,6 +211,67 @@ const schemaPropertyDescriptions: Readonly<
     authenticated: "令牌是否已通过认证；成功响应固定为 true。",
     isAdmin: "当前 Clerk 用户是否为配置的管理员。",
   },
+  SiteSettings: {
+    showName: "首页是否显示站点名称。",
+    name: "站点名称。",
+    description: "站点简介。",
+  },
+  FeatureSettings: {
+    statistics: "统计功能是否启用。",
+    random: "随机一天功能是否启用。",
+    rss: "RSS 订阅功能是否启用。",
+  },
+  ContentSettings: {
+    public: "未登录访问者是否可以读取内容。",
+    pageSize: "信息流每次加载数量。",
+  },
+  AppSettings: {
+    site: "站点信息设置。",
+    features: "功能开关。",
+    content: "内容读取与分页设置。",
+    updatedAt: "设置最后更新时间。",
+  },
+  CompleteBackup: {
+    version: "备份格式版本。",
+    exportedAt: "备份生成时间。",
+    settings: "导出时的应用设置。",
+    posts: "全部公开及回收站内容。",
+  },
+  BackupPost: {
+    id: "稳定的内容 UUID。",
+    content: "备份中的正文。",
+    images: "备份中的有序图片 URL 列表。",
+    createdAt: "原始创建时间，ISO 8601 格式。",
+    updatedAt: "原始更新时间，ISO 8601 格式。",
+    edited: "内容是否在创建后编辑过。",
+    deletedAt: "移入回收站的时间；未删除时为 null。",
+  },
+  RestoreBackupPreviewRequest: {
+    backup: "待校验的完整结构化备份。",
+  },
+  RestoreBackupPreview: {
+    totalPosts: "备份中的内容总数。",
+    conflictCount: "与当前数据库 ID 相同的内容数量。",
+    conflictIds: "与当前数据库冲突的内容 UUID。",
+    settingsWillBeRestored: "是否会同时恢复备份中的应用设置。",
+  },
+  RestoreBackupRequest: {
+    backup: "待恢复的完整结构化备份。",
+    overwriteConflicts: "是否明确授权覆盖相同 ID 的现有内容。",
+  },
+  RestoreBackupResult: {
+    restoredPosts: "本次处理的备份内容总数。",
+    insertedPosts: "新插入的内容数量。",
+    overwrittenPosts: "覆盖的现有内容数量。",
+    settings: "已恢复的应用设置。",
+  },
+  ClearPosts: {
+    confirmation: "固定的数据清空确认文字。",
+  },
+  ClearPostsResult: {
+    deletedPosts: "已删除的内容数量。",
+    deletedImages: "已删除的托管图片数量。",
+  },
 };
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
@@ -229,6 +332,8 @@ export function localizeOpenApiDocument(document: unknown): JsonObject {
     { name: "统计", description: "每日发布统计与管理员统计文案。" },
     { name: "回收站", description: "管理员查看、恢复和永久删除内容。" },
     { name: "身份认证", description: "Clerk 会话与管理员状态。" },
+    { name: "设置", description: "公开运行设置与管理员设置更新。" },
+    { name: "数据维护", description: "管理员备份与破坏性数据维护操作。" },
   ];
   addSchemaPropertyDescriptions(localized);
   return localized;

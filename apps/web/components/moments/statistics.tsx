@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCwIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -12,9 +11,7 @@ import {
 } from "@/components/heatmap/calendar-heatmap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "@/components/ui/toast";
 import {
   Tooltip,
   TooltipContent,
@@ -23,7 +20,7 @@ import {
 
 import {
   getMomentStatistics,
-  rebuildStatistics,
+  MomentsApiError,
   retryRead,
   type MomentStatistics,
 } from "./api";
@@ -31,6 +28,7 @@ import { useAdminAccess } from "./auth-controls";
 import { MomentsShell } from "./moments-shell";
 import { PageTitle } from "./page-title";
 import { TextContent } from "./text-content";
+import { useSiteSettings } from "./site-settings";
 
 const heatmapLabels = {
   months: [
@@ -79,10 +77,10 @@ function activityForYear(
 export function MomentsStatistics() {
   const router = useRouter();
   const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
+  const { settings, isLoading: isSettingsLoading } = useSiteSettings();
   const [statistics, setStatistics] = useState<MomentStatistics | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRebuilding, setIsRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -92,44 +90,41 @@ export function MomentsStatistics() {
       const value = await retryRead(() => getMomentStatistics(token));
       setStatistics(value);
       setError(null);
-    } catch {
-      setError("统计信息加载失败，请稍后重试。");
+    } catch (loadError) {
+      setError(
+        loadError instanceof MomentsApiError &&
+          loadError.code === "FEATURE_DISABLED"
+          ? "统计功能已关闭"
+          : "统计信息加载失败，请稍后重试。",
+      );
     } finally {
       setIsLoading(false);
     }
   }, [getToken]);
 
   useEffect(() => {
-    if (isCheckingAdmin) return;
+    if (isCheckingAdmin || isSettingsLoading || !settings) return;
     if (!isAdmin) {
       router.replace("/");
       return;
     }
+    if (!settings.features.statistics) {
+      const timer = window.setTimeout(() => {
+        setIsLoading(false);
+        setError("统计功能已关闭");
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [isAdmin, isCheckingAdmin, load, router]);
-
-  const rebuild = useCallback(async () => {
-    const token = await getToken();
-    if (!token || isRebuilding) return;
-    setIsRebuilding(true);
-    try {
-      const value = await rebuildStatistics(token);
-      setStatistics(value);
-      setError(null);
-      toast.add({ type: "success", description: "统计数据已重新计算。" });
-    } catch (rebuildError) {
-      toast.add({
-        type: "error",
-        description:
-          rebuildError instanceof Error
-            ? rebuildError.message
-            : "统计重建失败，请稍后重试。",
-      });
-    } finally {
-      setIsRebuilding(false);
-    }
-  }, [getToken, isRebuilding]);
+  }, [
+    isAdmin,
+    isCheckingAdmin,
+    isSettingsLoading,
+    load,
+    router,
+    settings,
+  ]);
 
   const years = useMemo(
     () =>
@@ -154,28 +149,7 @@ export function MomentsStatistics() {
 
   return (
     <MomentsShell>
-      <div className="mb-12 flex items-center justify-between gap-4">
-        <PageTitle className="mb-0">统计信息</PageTitle>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label="重新计算统计数据"
-                disabled={isRebuilding}
-                onClick={() => {
-                  void rebuild();
-                }}
-              />
-            }
-          >
-            {isRebuilding ? <Spinner /> : <RefreshCwIcon />}
-          </TooltipTrigger>
-          <TooltipContent>重新计算统计数据</TooltipContent>
-        </Tooltip>
-      </div>
+      <PageTitle>统计信息</PageTitle>
 
       {isLoading ? <StatisticsSkeleton /> : null}
 

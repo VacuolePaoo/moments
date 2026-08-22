@@ -6,6 +6,7 @@ import "./globals.css";
 
 import { AdminAccessProvider } from "@/components/moments/auth-controls";
 import { MomentsToolbar } from "@/components/moments/moments-toolbar";
+import { SiteSettingsProvider } from "@/components/moments/site-settings";
 import { SystemThemeListener } from "@/components/moments/system-theme";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -35,23 +36,19 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <link
-          rel="alternate"
-          type="application/rss+xml"
-          title="Moments RSS"
-          href="/rss.xml"
-        />
         <script dangerouslySetInnerHTML={{ __html: systemThemeScript }} />
       </head>
       <body className="min-h-full bg-background text-base leading-6 text-foreground">
         <ClerkProvider localization={zhCN}>
           <AdminAccessProvider>
-            <SystemThemeListener />
-            <TooltipProvider>
-              {children}
-              <MomentsToolbar />
-            </TooltipProvider>
-            <Toaster />
+            <SiteSettingsProvider>
+              <SystemThemeListener />
+              <TooltipProvider>
+                {children}
+                <MomentsToolbar />
+              </TooltipProvider>
+              <Toaster />
+            </SiteSettingsProvider>
           </AdminAccessProvider>
         </ClerkProvider>
       </body>
