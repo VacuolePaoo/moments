@@ -164,6 +164,9 @@ const FeatureSettingsSchema = z
 const ContentSettingsSchema = z
   .strictObject({
     public: z.boolean(),
+    // Backups created before the voice publishing switch existed omit this
+    // field; the default keeps them restorable.
+    voice: z.boolean().default(true),
     pageSize: z.number().int().min(1).max(100),
   })
   .openapi("ContentSettings");
@@ -191,7 +194,13 @@ export const UpdateSettingsSchema = z
       })
       .optional(),
     features: FeatureSettingsSchema.partial().optional(),
-    content: ContentSettingsSchema.partial().optional(),
+    content: z
+      .strictObject({
+        public: z.boolean().optional(),
+        voice: z.boolean().optional(),
+        pageSize: z.number().int().min(1).max(100).optional(),
+      })
+      .optional(),
   })
   .refine(
     (value) =>

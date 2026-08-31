@@ -68,6 +68,7 @@ export interface AppSettings {
   };
   content: {
     public: boolean;
+    voice: boolean;
     pageSize: number;
   };
   updatedAt: string;

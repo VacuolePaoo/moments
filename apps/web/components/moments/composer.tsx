@@ -57,12 +57,12 @@ function extensionForMimeType(mimeType: string): string {
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
   function Composer({ getToken, onCreated, initialContent }, ref) {
-    const { fileUploadConfigured } = useSiteSettings();
+    const { fileUploadConfigured, settings } = useSiteSettings();
     const [content, setContent] = useState("");
     const [images, setImages] = useState<EditableImage[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [draftSaved, setDraftSaved] = useState(false);
-    const [mode, setMode] = useState<"article" | "audio">("article");
+    const [selectedMode, setMode] = useState<"article" | "audio">("article");
     const [voiceBusy, setVoiceBusy] = useState(false);
     const [voiceDraft, setVoiceDraft] = useState<VoiceRecordingDraft | null>(
       null,
@@ -71,6 +71,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
     const imagesRef = useRef(images);
     const draftKey = publishDraftKey();
+    const voiceEnabled = settings?.content.voice ?? false;
+    const mode = voiceEnabled ? selectedMode : "article";
 
     useEffect(() => {
       imagesRef.current = images;
@@ -276,28 +278,33 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
               </>
             ) : null}
 
-            <div className="ml-5 flex items-center gap-2">
-              <MicIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-              <Switch
-                size="sm"
-                aria-label="切换语音发布"
-                checked={mode === "audio"}
-                disabled={
-                  !fileUploadConfigured ||
-                  isSubmitting ||
-                  voiceBusy ||
-                  // 已录制的音频只存在于内存中，切回文字模式会丢失，需先清除。
-                  (mode === "audio" && voiceDraft !== null)
-                }
-                onCheckedChange={(checked) => {
-                  setMode(checked ? "audio" : "article");
-                  if (!checked) {
-                    setVoiceDraft(null);
-                    setVoiceComposerKey((current) => current + 1);
+            {voiceEnabled ? (
+              <div className="ml-5 flex items-center gap-2">
+                <MicIcon
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Switch
+                  size="sm"
+                  aria-label="切换语音发布"
+                  checked={mode === "audio"}
+                  disabled={
+                    !fileUploadConfigured ||
+                    isSubmitting ||
+                    voiceBusy ||
+                    // 已录制的音频只存在于内存中，切回文字模式会丢失，需先清除。
+                    (mode === "audio" && voiceDraft !== null)
                   }
-                }}
-              />
-            </div>
+                  onCheckedChange={(checked) => {
+                    setMode(checked ? "audio" : "article");
+                    if (!checked) {
+                      setVoiceDraft(null);
+                      setVoiceComposerKey((current) => current + 1);
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-3">

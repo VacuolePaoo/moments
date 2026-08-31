@@ -188,6 +188,7 @@ export async function restoreBackup(
            random_enabled = ?,
            rss_enabled = ?,
            content_public = ?,
+           voice_enabled = ?,
            page_size = ?,
            updated_at = ?
          WHERE id = 1`,
@@ -200,6 +201,7 @@ export async function restoreBackup(
         Number(backup.settings.features.random),
         Number(backup.settings.features.rss),
         Number(backup.settings.content.public),
+        Number(backup.settings.content.voice),
         backup.settings.content.pageSize,
         backup.settings.updatedAt,
       ),

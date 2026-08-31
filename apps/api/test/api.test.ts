@@ -98,7 +98,7 @@ describe("Moments API", () => {
     await expect(publicResponse.json()).resolves.toMatchObject({
       site: { showName: true, name: "Moments", description: "" },
       features: { statistics: true, random: true, rss: true },
-      content: { public: true, pageSize: 20 },
+      content: { public: true, voice: true, pageSize: 20 },
     });
 
     expect(
@@ -159,6 +159,17 @@ describe("Moments API", () => {
     await expect(persisted.json()).resolves.toMatchObject({
       site: { name: "" },
       content: { pageSize: 7 },
+    });
+
+    const voiceResponse = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", { content: { voice: false } }),
+      env,
+    );
+    expect(voiceResponse.status).toBe(200);
+    // Partial content updates must not reset the sibling fields.
+    await expect(voiceResponse.json()).resolves.toMatchObject({
+      content: { public: true, voice: false, pageSize: 7 },
     });
   });
 
@@ -497,12 +508,14 @@ describe("Moments API", () => {
     ).resolves.toEqual({ post_count: 1 });
     await expect(
       env.DB.prepare(
-        "SELECT site_name, random_enabled, content_public, page_size FROM settings WHERE id = 1",
+        "SELECT site_name, random_enabled, content_public, voice_enabled, page_size FROM settings WHERE id = 1",
       ).first(),
     ).resolves.toEqual({
       site_name: "备份站点",
       random_enabled: 0,
       content_public: 0,
+      // Backups without the voice field restore with it enabled.
+      voice_enabled: 1,
       page_size: 12,
     });
   });

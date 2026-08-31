@@ -665,6 +665,10 @@
           "public": {
             "type": "boolean"
           },
+          "voice": {
+            "type": "boolean",
+            "default": true
+          },
           "pageSize": {
             "type": "integer",
             "minimum": 1,
@@ -716,6 +720,9 @@
             "type": "object",
             "properties": {
               "public": {
+                "type": "boolean"
+              },
+              "voice": {
                 "type": "boolean"
               },
               "pageSize": {

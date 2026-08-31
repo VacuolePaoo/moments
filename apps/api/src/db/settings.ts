@@ -9,6 +9,7 @@ interface SettingsRow {
   random_enabled: number;
   rss_enabled: number;
   content_public: number;
+  voice_enabled: number;
   page_size: number;
   updated_at: string;
 }
@@ -37,6 +38,7 @@ function toAppSettings(row: SettingsRow): AppSettings {
     },
     content: {
       public: toBoolean(row.content_public),
+      voice: toBoolean(row.voice_enabled),
       pageSize: row.page_size,
     },
     updatedAt: row.updated_at,
@@ -54,6 +56,7 @@ export async function getAppSettings(db: D1Database): Promise<AppSettings> {
          random_enabled,
          rss_enabled,
          content_public,
+         voice_enabled,
          page_size,
          updated_at
        FROM settings
@@ -89,6 +92,7 @@ export async function updateAppSettings(
     },
     content: {
       public: update.content?.public ?? current.content.public,
+      voice: update.content?.voice ?? current.content.voice,
       pageSize: update.content?.pageSize ?? current.content.pageSize,
     },
     updatedAt: new Date().toISOString(),
@@ -105,6 +109,7 @@ export async function updateAppSettings(
          random_enabled = ?,
          rss_enabled = ?,
          content_public = ?,
+         voice_enabled = ?,
          page_size = ?,
          updated_at = ?
        WHERE id = 1`,
@@ -117,6 +122,7 @@ export async function updateAppSettings(
       Number(next.features.random),
       Number(next.features.rss),
       Number(next.content.public),
+      Number(next.content.voice),
       next.content.pageSize,
       next.updatedAt,
     )

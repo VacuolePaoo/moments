@@ -245,6 +245,7 @@ const schemaPropertyDescriptions: Readonly<
   },
   ContentSettings: {
     public: "未登录访问者是否可以读取内容。",
+    voice: "语音发布是否启用；旧备份缺省时按启用恢复。",
     pageSize: "信息流每次加载数量。",
   },
   AppSettings: {

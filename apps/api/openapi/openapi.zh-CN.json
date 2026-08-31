@@ -722,6 +722,11 @@
             "type": "boolean",
             "description": "未登录访问者是否可以读取内容。"
           },
+          "voice": {
+            "type": "boolean",
+            "default": true,
+            "description": "语音发布是否启用；旧备份缺省时按启用恢复。"
+          },
           "pageSize": {
             "type": "integer",
             "minimum": 1,
@@ -774,6 +779,9 @@
             "type": "object",
             "properties": {
               "public": {
+                "type": "boolean"
+              },
+              "voice": {
                 "type": "boolean"
               },
               "pageSize": {

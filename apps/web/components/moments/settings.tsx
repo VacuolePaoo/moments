@@ -439,6 +439,13 @@ export function MomentsSettings() {
                     "内容公开设置已保存。",
                   )
                 }
+                onToggleVoice={(enabled) =>
+                  void save(
+                    { content: { voice: enabled } },
+                    "content-voice",
+                    "语音发布设置已保存。",
+                  )
+                }
                 onSavePageSize={() =>
                   void save(
                     { content: { pageSize: settings.content.pageSize } },
@@ -1012,12 +1019,14 @@ function ContentSettingsSection({
   pendingAction,
   onChange,
   onTogglePublic,
+  onToggleVoice,
   onSavePageSize,
 }: {
   settings: AppSettings;
   pendingAction: string | null;
   onChange: (settings: AppSettings) => void;
   onTogglePublic: (enabled: boolean) => void;
+  onToggleVoice: (enabled: boolean) => void;
   onSavePageSize: () => void;
 }) {
   return (
@@ -1035,6 +1044,20 @@ function ContentSettingsSection({
             checked={settings.content.public}
             disabled={pendingAction !== null}
             onCheckedChange={onTogglePublic}
+          />
+        </Field>
+        <Field orientation="horizontal" data-disabled={pendingAction !== null}>
+          <FieldContent>
+            <FieldTitle className={BODY_TEXT_CLASS}>语音发布</FieldTitle>
+            <FieldDescription>
+              关闭后，发布框不再显示语音发布开关，已发布的语音仍可正常播放。
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            aria-label="语音发布"
+            checked={settings.content.voice}
+            disabled={pendingAction !== null}
+            onCheckedChange={onToggleVoice}
           />
         </Field>
         <Field data-disabled={pendingAction !== null}>
