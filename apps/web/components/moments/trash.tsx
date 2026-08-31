@@ -293,7 +293,7 @@ function TrashItem({
           <AlertDialogHeader>
             <AlertDialogTitle>永久删除这条说说？</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作无法撤销，已上传到图床的图片也会同时删除。
+              此操作无法撤销，关联的托管图片或录音也会同时删除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

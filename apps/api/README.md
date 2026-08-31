@@ -36,7 +36,7 @@ v2.1 adds D1-backed runtime settings and maintenance:
 - `GET /api/v1/settings/public` returns non-sensitive site, feature and content settings.
 - Administrator `GET/PATCH /api/v1/settings` persists site information, feature switches, content visibility and default page size.
 - Statistics, random and RSS switches are enforced by the Worker. Migration `0005_create_settings_and_feature_gates.sql` also stops statistics triggers while statistics are disabled; re-enabling statistics rebuilds the aggregates.
-- `GET /api/v1/maintenance/backup` exports all posts and settings. `POST /api/v1/maintenance/clear-posts` requires administrator authentication, the exact configured `Origin`, and the fixed confirmation phrase; hosted images are deleted before D1 rows.
+- `GET /api/v1/maintenance/backup` exports all posts and settings. `POST /api/v1/maintenance/clear-posts` requires administrator authentication, the exact configured `Origin`, and the fixed confirmation phrase; hosted images and recordings are deleted before D1 rows.
 
 ## Statistics aggregates
 
@@ -128,9 +128,9 @@ removing values managed in the Cloudflare dashboard.
 
 Also set `CFBED_BASE_URL` to the origin of your CloudFlare ImgBed instance. The
 token must have the ImgBed `delete` permission. Permanent deletion removes all
-managed `/file/...` images first and deletes the D1 row only after ImgBed
+managed `/file/...` images and recordings first and deletes the D1 row only after ImgBed
 confirms every deletion. A post with one managed image uses
-`GET /api/manage/delete/{path}`; multiple images use at most 500 file IDs per
+`GET /api/manage/delete/{path}`; multiple files use at most 500 file IDs per
 `POST /api/manage/delete/batch` request. A batch is trusted only when the
 documented `deleted`/`failed` result accounts for every file. Non-standard or
 partial acknowledgements are completed through the single-file endpoint before

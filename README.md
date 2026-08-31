@@ -1,8 +1,8 @@
 # Moments
 
-基于 Next.js、Clerk、Cloudflare Workers、D1 和 CloudFlare ImgBed 的自部署个人说说项目。
+基于 Next.js、Clerk、Cloudflare Workers、D1 和 CloudFlare ImgBed 文件托管的自部署个人说说项目。
 
-- `apps/web`：Next.js 前端、Clerk 登录和 ImgBed 上传代理
+- `apps/web`：Next.js 前端、Clerk 登录和 ImgBed 文件上传代理
 - `apps/api`：Hono Worker、Clerk JWT 鉴权、D1 数据库和 OpenAPI
 
 ## 准备工作
@@ -25,7 +25,7 @@
 
 部署前端后，将最终前端域名添加到 Clerk 应用的生产域名配置中。
 
-## 2. 准备 ImgBed
+## 2. 准备 ImgBed 文件托管
 
 在 ImgBed 管理界面创建 API Token。推荐使用两个 Token：
 
@@ -70,7 +70,7 @@ GET https://你的-worker-地址/health
 GET https://你的-worker-地址/openapi.json
 ```
 
-`/health` 应返回 `status: "ok"`、`database: "ok"`，以及 Worker 图床地址是否配置的 `fileOperationsConfigured`。
+`/health` 应返回 `status: "ok"`、`database: "ok"`，以及 Worker 文件托管地址是否配置的 `fileOperationsConfigured`。
 
 站点同时提供标准 RSS 2.0 订阅地址 `https://你的前端域名/rss.xml`，内容范围为最近 20 个亚洲/上海自然日；Worker 也在 `/rss.xml` 提供同一份源数据。
 
@@ -114,10 +114,11 @@ pnpm deploy:api
 2. 发布一条文字或图片说说。
 3. 删除说说并进入回收站。
 4. 测试恢复和永久删除。
-5. 永久删除带图片的说说后，确认 ImgBed 中的文件也已删除。
-6. 编辑说说并移除旧图片，确认图床删除成功后页面与 D1 中都不再保留该图片。
-7. 打开设置页，确认系统状态、功能开关、内容公开和每次加载数量均可保存并真实影响前后端。
-8. 测试完整备份；清空数据会要求输入固定确认文字，并在图床文件全部删除成功后清空 D1。
+5. 发布声音 Moment，确认录音上传到 ImgBed 的 `recording` 目录并可播放。
+6. 永久删除带图片或录音的说说后，确认 ImgBed 中的文件也已删除。
+7. 编辑说说并移除旧图片，确认文件托管服务删除成功后页面与 D1 中都不再保留该图片。
+8. 打开设置页，确认系统状态、功能开关、内容公开和每次加载数量均可保存并真实影响前后端。
+9. 测试完整备份；清空数据会要求输入固定确认文字，并在托管文件全部删除成功后清空 D1。
 
 ## 本地开发
 

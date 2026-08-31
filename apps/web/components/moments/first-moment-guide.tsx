@@ -14,7 +14,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 export const FIRST_MOMENT_CONTENT =
-  "这是我使用Moments发布的第一篇帖子，它还支持上传图片到我的图床";
+  "这是我使用Moments发布的第一篇帖子，它还支持将图片和声音上传到文件托管服务";
 
 export function FirstMomentGuide({
   isLeaving,
