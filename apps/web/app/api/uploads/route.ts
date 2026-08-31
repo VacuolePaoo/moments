@@ -5,6 +5,10 @@ interface ImgBedUploadResult {
   publicUrl?: unknown;
 }
 
+const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+const MAX_RECORDING_BYTES = 32 * 1024 * 1024;
+const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 1024 * 1024;
+
 function jsonError(status: number, message: string) {
   return Response.json({ error: { message } }, { status });
 }
@@ -59,11 +63,16 @@ function resolveUploadedUrl(
 export async function POST(request: Request) {
   const authorization = request.headers.get("Authorization");
   const token = authorization?.match(/^Bearer\s+(.+)$/iu)?.[1];
-  if (!token) return jsonError(401, "需要登录后上传图片。");
+  if (!token) return jsonError(401, "需要登录后上传文件。");
+
+  const contentLength = Number(request.headers.get("Content-Length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_MULTIPART_BYTES) {
+    return jsonError(413, "上传文件过大。");
+  }
 
   try {
     if (!(await isAdministrator(token))) {
-      return jsonError(403, "只有管理员可以上传图片。");
+      return jsonError(403, "只有管理员可以上传文件。");
     }
   } catch {
     return jsonError(502, "暂时无法验证管理员身份。");
@@ -72,7 +81,7 @@ export async function POST(request: Request) {
   const baseUrl = imgBedBaseUrl();
   const apiToken = process.env.CFBED_API_TOKEN;
   if (!baseUrl || !apiToken) {
-    return jsonError(503, "图片上传服务尚未配置。");
+    return jsonError(503, "文件托管服务尚未配置。");
   }
 
   let incoming: FormData;
@@ -82,12 +91,24 @@ export async function POST(request: Request) {
     return jsonError(422, "上传请求格式无效。");
   }
   const file = incoming.get("file");
-  if (!(file instanceof File) || !file.type.startsWith("image/")) {
-    return jsonError(422, "请选择有效的图片文件。");
+  const kind = incoming.get("kind") === "recording" ? "recording" : "image";
+  const expectedType = kind === "recording" ? "audio/" : "image/";
+  if (!(file instanceof File) || !file.type.startsWith(expectedType)) {
+    return jsonError(
+      422,
+      kind === "recording"
+        ? "请选择有效的录音文件。"
+        : "请选择有效的图片文件。",
+    );
+  }
+  const maxBytes = kind === "recording" ? MAX_RECORDING_BYTES : MAX_IMAGE_BYTES;
+  if (file.size === 0 || file.size > maxBytes) {
+    return jsonError(413, "上传文件大小无效或超过限制。");
   }
 
   const query = new URLSearchParams({ returnFormat: "full" });
-  const uploadFolder = process.env.CFBED_UPLOAD_FOLDER;
+  const uploadFolder =
+    kind === "recording" ? "recording" : process.env.CFBED_UPLOAD_FOLDER;
   if (uploadFolder) query.set("uploadFolder", uploadFolder);
 
   const outgoing = new FormData();
@@ -102,11 +123,11 @@ export async function POST(request: Request) {
       cache: "no-store",
     });
   } catch {
-    return jsonError(502, "无法连接图片上传服务。");
+    return jsonError(502, "无法连接文件托管服务。");
   }
 
   if (!response.ok) {
-    return jsonError(502, "图片上传服务拒绝了本次上传。");
+    return jsonError(502, "文件托管服务拒绝了本次上传。");
   }
 
   let results: ImgBedUploadResult[];
@@ -115,11 +136,11 @@ export async function POST(request: Request) {
     if (!Array.isArray(body)) throw new Error("Invalid upload response.");
     results = body as ImgBedUploadResult[];
   } catch {
-    return jsonError(502, "图片上传服务返回了无效结果。");
+    return jsonError(502, "文件托管服务返回了无效结果。");
   }
 
   const url = results[0] ? resolveUploadedUrl(baseUrl, results[0]) : null;
   return url
-    ? Response.json({ url })
-    : jsonError(502, "图片上传结果中没有可用链接。");
+    ? Response.json({ url, mimeType: file.type, sizeBytes: file.size })
+    : jsonError(502, "文件上传结果中没有可用链接。");
 }

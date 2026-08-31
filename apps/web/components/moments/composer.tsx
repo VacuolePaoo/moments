@@ -1,16 +1,13 @@
 "use client";
 
-import {
-  forwardRef,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { CornerDownLeftIcon, ImagePlusIcon } from "lucide-react";
+import dynamic from "next/dynamic";
+import { CornerDownLeftIcon, ImagePlusIcon, MicIcon } from "lucide-react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import {
@@ -19,7 +16,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { createPost, type MomentPost } from "./api";
+import {
+  createAudioPost,
+  createPost,
+  uploadRecording,
+  type MomentPost,
+} from "./api";
 import { publishDraftKey, readDraft, removeDraft, writeDraft } from "./drafts";
 import {
   EditableImageAttachments,
@@ -29,11 +31,28 @@ import {
   type EditableImage,
 } from "./image-attachments";
 import { useSiteSettings } from "./site-settings";
+import type { VoiceRecordingDraft } from "./voice-composer";
 
 interface ComposerProps {
   getToken: () => Promise<string | null>;
   onCreated: (post: MomentPost) => void;
   initialContent?: string;
+}
+
+const VoiceComposer = dynamic(
+  () => import("./voice-composer").then((module) => module.VoiceComposer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-32 min-h-32 items-center justify-center rounded-xl border">
+        <Spinner />
+      </div>
+    ),
+  },
+);
+
+function extensionForMimeType(mimeType: string): string {
+  return mimeType.includes("mp4") ? "m4a" : "webm";
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
@@ -43,6 +62,12 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
     const [images, setImages] = useState<EditableImage[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [draftSaved, setDraftSaved] = useState(false);
+    const [mode, setMode] = useState<"article" | "audio">("article");
+    const [voiceBusy, setVoiceBusy] = useState(false);
+    const [voiceDraft, setVoiceDraft] = useState<VoiceRecordingDraft | null>(
+      null,
+    );
+    const [voiceComposerKey, setVoiceComposerKey] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const imagesRef = useRef(images);
     const draftKey = publishDraftKey();
@@ -96,7 +121,12 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
       setImages((current) => current.filter((item) => item.id !== image.id));
     }
 
-    async function publish() {
+    function clearPublishedImages() {
+      images.forEach(releaseEditableImage);
+      setImages([]);
+    }
+
+    async function publishArticle() {
       if ((!content.trim() && images.length === 0) || isSubmitting) return;
       setIsSubmitting(true);
       try {
@@ -109,8 +139,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
         );
         const post = await createPost(content, imageUrls, token);
         onCreated(post);
-        images.forEach(releaseEditableImage);
-        setImages([]);
+        clearPublishedImages();
         setContent("");
         removeDraft(draftKey);
         setDraftSaved(false);
@@ -125,14 +154,60 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
       }
     }
 
-    const canPublish = content.trim().length > 0 || images.length > 0;
+    async function publishAudio() {
+      if (!voiceDraft || isSubmitting) return;
+      setIsSubmitting(true);
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("登录状态已失效。");
+        const imageUrls = await uploadEditableImages(
+          images,
+          token,
+          updateImage,
+        );
+        const file = new File(
+          [voiceDraft.blob],
+          `recording-${new Date().toISOString().replaceAll(":", "-")}.${extensionForMimeType(voiceDraft.mimeType)}`,
+          { type: voiceDraft.mimeType },
+        );
+        const hosted = await uploadRecording(file, token);
+        const post = await createAudioPost(
+          { ...hosted, durationMs: voiceDraft.durationMs },
+          imageUrls,
+          token,
+        );
+        onCreated(post);
+        clearPublishedImages();
+        setVoiceDraft(null);
+        setVoiceComposerKey((current) => current + 1);
+      } catch (error) {
+        toast.add({
+          type: "error",
+          description:
+            error instanceof Error
+              ? error.message
+              : "声音发布失败，请稍后重试。",
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+
+    const canPublish =
+      mode === "audio"
+        ? voiceDraft !== null
+        : content.trim().length > 0 || images.length > 0;
 
     return (
       <form
-        className="flex w-full flex-col gap-3"
+        className="flex w-full min-w-0 flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          void publish();
+          if (mode === "audio") {
+            void publishAudio();
+          } else {
+            void publishArticle();
+          }
         }}
       >
         <EditableImageAttachments
@@ -140,58 +215,93 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
           disabled={isSubmitting}
           onRemove={removeImage}
         />
-        <Label htmlFor="moment-composer" className="sr-only">
-          发布说说
-        </Label>
-        <Textarea
-          ref={ref}
-          id="moment-composer"
-          value={content}
-          onChange={(event) => handleContentChange(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-              event.preventDefault();
-              void publish();
-            }
-          }}
-          className="min-h-32 resize-none text-base leading-6 md:text-base"
-          disabled={isSubmitting}
-        />
+
+        {mode === "audio" ? (
+          <VoiceComposer
+            key={voiceComposerKey}
+            disabled={isSubmitting}
+            onDraftChange={setVoiceDraft}
+            onBusyChange={setVoiceBusy}
+          />
+        ) : (
+          <>
+            <Label htmlFor="moment-composer" className="sr-only">
+              发布说说
+            </Label>
+            <Textarea
+              ref={ref}
+              id="moment-composer"
+              value={content}
+              onChange={(event) => handleContentChange(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void publishArticle();
+                }
+              }}
+              className="h-32 min-h-32 resize-none text-base leading-6 md:text-base"
+              disabled={isSubmitting}
+            />
+          </>
+        )}
 
         <div className="flex items-center justify-between gap-4">
-          {fileUploadConfigured ? (
-            <>
-              <EditableImageInput
-                inputRef={fileInputRef}
-                currentCount={images.length}
-                onAccepted={(accepted) =>
-                  setImages((current) => [...current, ...accepted])
-                }
-              />
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="添加图片"
-                      disabled={isSubmitting}
-                      onClick={() => fileInputRef.current?.click()}
-                    />
+          <div className="flex min-w-0 items-center">
+            {fileUploadConfigured ? (
+              <>
+                <EditableImageInput
+                  inputRef={fileInputRef}
+                  currentCount={images.length}
+                  onAccepted={(accepted) =>
+                    setImages((current) => [...current, ...accepted])
                   }
-                >
-                  <ImagePlusIcon />
-                </TooltipTrigger>
-                <TooltipContent>添加图片</TooltipContent>
-              </Tooltip>
-            </>
-          ) : (
-            <span />
-          )}
+                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="添加图片"
+                        disabled={isSubmitting}
+                        onClick={() => fileInputRef.current?.click()}
+                      />
+                    }
+                  >
+                    <ImagePlusIcon />
+                  </TooltipTrigger>
+                  <TooltipContent>添加图片</TooltipContent>
+                </Tooltip>
+              </>
+            ) : null}
+
+            <div className="ml-5 flex items-center gap-2">
+              <MicIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+              <Switch
+                size="sm"
+                aria-label="切换语音发布"
+                checked={mode === "audio"}
+                disabled={
+                  !fileUploadConfigured ||
+                  isSubmitting ||
+                  voiceBusy ||
+                  // 已录制的音频只存在于内存中，切回文字模式会丢失，需先清除。
+                  (mode === "audio" && voiceDraft !== null)
+                }
+                onCheckedChange={(checked) => {
+                  setMode(checked ? "audio" : "article");
+                  if (!checked) {
+                    setVoiceDraft(null);
+                    setVoiceComposerKey((current) => current + 1);
+                  }
+                }}
+              />
+            </div>
+          </div>
 
           <div className="flex items-center gap-3">
-            {draftSaved ? (
+            {mode === "article" && draftSaved ? (
               <span className="text-sm text-muted-foreground opacity-70">
                 已自动保存
               </span>

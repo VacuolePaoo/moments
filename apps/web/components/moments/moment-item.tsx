@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import {
   EllipsisIcon,
   ImagePlusIcon,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { TransitionPresence } from "@/components/ui/transition-presence";
@@ -69,6 +71,11 @@ interface MomentItemProps {
   onDelete: (post: MomentPost) => void;
 }
 
+const VoicePlayer = dynamic(
+  () => import("./voice-player").then((module) => module.VoicePlayer),
+  { ssr: false, loading: () => <Skeleton className="h-24 w-full" /> },
+);
+
 interface MomentReadOnlyProps {
   post: MomentPost;
   showTime?: boolean;
@@ -97,10 +104,27 @@ function MomentTime({ post }: { post: MomentPost }) {
 function MomentBody({
   post,
   eagerImages = false,
+  time,
+  trailing,
 }: {
   post: MomentPost;
   eagerImages?: boolean;
+  time?: ReactNode;
+  trailing?: ReactNode;
 }) {
+  if (post.kind === "audio" && post.audio) {
+    return (
+      <div className="flex min-w-0 max-w-full flex-col gap-4">
+        <VoicePlayer
+          audio={post.audio}
+          variant="inline"
+          time={time}
+          trailing={trailing}
+        />
+        <MomentImages images={post.images} eager={eagerImages} />
+      </div>
+    );
+  }
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4">
       <MomentImages images={post.images} eager={eagerImages} />
@@ -113,20 +137,76 @@ function EditedLabel() {
   return <p className="mt-2 text-sm text-muted-foreground">已编辑</p>;
 }
 
+function MomentActions({
+  post,
+  onDelete,
+  onEdit,
+}: {
+  post: MomentPost;
+  onDelete: (post: MomentPost) => void;
+  onEdit?: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="更多操作"
+                />
+              }
+            />
+          }
+        >
+          <EllipsisIcon />
+        </TooltipTrigger>
+        <TooltipContent>更多操作</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          {post.kind === "article" && onEdit ? (
+            <DropdownMenuItem onClick={onEdit}>
+              <PencilIcon />
+              编辑
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => onDelete(post)}
+          >
+            <Trash2Icon />
+            删除
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function MomentReadOnly({
   post,
   showTime = false,
   showEdited = false,
   eagerImages = false,
 }: MomentReadOnlyProps) {
+  const isAudio = post.kind === "audio";
   return (
     <article className="relative min-w-0">
-      {showTime ? (
+      {showTime && !isAudio ? (
         <div className="mb-2 flex min-h-8 items-center gap-4">
           <MomentTime post={post} />
         </div>
       ) : null}
-      <MomentBody post={post} eagerImages={eagerImages} />
+      <MomentBody
+        post={post}
+        eagerImages={eagerImages}
+        time={showTime && isAudio ? <MomentTime post={post} /> : undefined}
+      />
       {showEdited && post.edited ? <EditedLabel /> : null}
     </article>
   );
@@ -306,55 +386,23 @@ export function MomentItem({
   }
 
   const canSave = content.trim().length > 0 || images.length > 0;
+  const isAudio = post.kind === "audio";
+  const hoverRevealClasses =
+    "md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100";
   return (
     <article className="group/moment relative min-w-0">
-      {showTime ? (
+      {showTime && !isAudio ? (
         <div className="mb-2 flex min-h-8 items-center gap-4">
           <MomentTime post={post} />
         </div>
       ) : null}
 
       <TransitionPresence
-        show={isAdmin && !isEditing}
+        show={isAdmin && !isEditing && !isAudio}
         animateOnMount={false}
-        className="absolute top-0 right-0 z-10 shrink-0 md:invisible md:opacity-0 md:group-hover/moment:visible md:group-hover/moment:opacity-100 md:group-focus-within/moment:visible md:group-focus-within/moment:opacity-100"
+        className={`absolute top-0 right-0 z-10 shrink-0 ${hoverRevealClasses}`}
       >
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="更多操作"
-                    />
-                  }
-                />
-              }
-            >
-              <EllipsisIcon />
-            </TooltipTrigger>
-            <TooltipContent>更多操作</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={beginEditing}>
-                <PencilIcon />
-                编辑
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => onDelete(post)}
-              >
-                <Trash2Icon />
-                删除
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <MomentActions post={post} onEdit={beginEditing} onDelete={onDelete} />
       </TransitionPresence>
 
       {isEditing ? (
@@ -435,8 +483,28 @@ export function MomentItem({
           </div>
         </form>
       ) : (
-        <div className={cn("min-w-0 max-w-full", isAdmin ? "pr-10" : undefined)}>
-          <MomentBody post={post} eagerImages={eagerImages} />
+        <div
+          className={cn(
+            "min-w-0 max-w-full",
+            isAdmin && !isAudio ? "pr-10" : undefined,
+          )}
+        >
+          <MomentBody
+            post={post}
+            eagerImages={eagerImages}
+            time={showTime && isAudio ? <MomentTime post={post} /> : undefined}
+            trailing={
+              isAdmin && isAudio ? (
+                <TransitionPresence
+                  show
+                  animateOnMount={false}
+                  className={hoverRevealClasses}
+                >
+                  <MomentActions post={post} onDelete={onDelete} />
+                </TransitionPresence>
+              ) : undefined
+            }
+          />
           {showEdited && post.edited ? <EditedLabel /> : null}
         </div>
       )}

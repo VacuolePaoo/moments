@@ -2,8 +2,10 @@ import { workerApiBaseUrl } from "@/lib/worker-api";
 
 export interface MomentPost {
   id: string;
+  kind: "article" | "audio";
   content: string;
   images: string[];
+  audio: AudioMetadata | null;
   createdAt: string;
   updatedAt: string;
   edited: boolean;
@@ -44,6 +46,13 @@ export interface MomentStatistics {
   administratorNarrative: Array<{
     segments: Array<{ text: string; bold: boolean }>;
   }>;
+}
+
+export interface AudioMetadata {
+  url: string;
+  durationMs: number;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export interface AppSettings {
@@ -100,7 +109,7 @@ export interface RestoreBackupResult {
 
 export interface ClearPostsResult {
   deletedPosts: number;
-  deletedImages: number;
+  deletedFiles: number;
 }
 
 export const MAX_IMAGES_PER_POST = 18;
@@ -270,9 +279,7 @@ export function getAuthStatus(
   return request<AuthStatus>("/api/v1/auth/me", { token, signal });
 }
 
-export function getPublicSettings(
-  signal?: AbortSignal,
-): Promise<AppSettings> {
+export function getPublicSettings(signal?: AbortSignal): Promise<AppSettings> {
   return request<AppSettings>("/api/v1/settings/public", { signal });
 }
 
@@ -306,14 +313,11 @@ export function previewBackupRestore(
   backup: CompleteBackup,
   token: string,
 ): Promise<RestoreBackupPreview> {
-  return request<RestoreBackupPreview>(
-    "/api/v1/maintenance/restore/preview",
-    {
-      method: "POST",
-      token,
-      body: { backup },
-    },
-  );
+  return request<RestoreBackupPreview>("/api/v1/maintenance/restore/preview", {
+    method: "POST",
+    token,
+    body: { backup },
+  });
 }
 
 export function restoreCompleteBackup(
@@ -351,7 +355,19 @@ export function createPost(
   return request<MomentPost>("/api/v1/posts", {
     method: "POST",
     token,
-    body: { content, images },
+    body: { kind: "article", content, images },
+  });
+}
+
+export function createAudioPost(
+  audio: AudioMetadata,
+  images: string[],
+  token: string,
+): Promise<MomentPost> {
+  return request<MomentPost>("/api/v1/posts", {
+    method: "POST",
+    token,
+    body: { kind: "audio", audio, images },
   });
 }
 
@@ -420,8 +436,17 @@ export function permanentlyDeletePost(
 }
 
 export async function uploadImage(file: File, token: string): Promise<string> {
+  return (await uploadFile(file, "image", token)).url;
+}
+
+async function uploadFile(
+  file: File,
+  kind: "image" | "recording",
+  token: string,
+): Promise<{ url: string; mimeType: string; sizeBytes: number }> {
   const form = new FormData();
   form.set("file", file, file.name);
+  form.set("kind", kind);
   const response = await fetch("/api/uploads", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -429,14 +454,32 @@ export async function uploadImage(file: File, token: string): Promise<string> {
   });
   const body = (await response.json().catch(() => ({}))) as {
     url?: unknown;
+    mimeType?: unknown;
+    sizeBytes?: unknown;
     error?: { message?: unknown };
   };
-  if (!response.ok || typeof body.url !== "string") {
+  if (
+    !response.ok ||
+    typeof body.url !== "string" ||
+    typeof body.mimeType !== "string" ||
+    typeof body.sizeBytes !== "number"
+  ) {
     throw new Error(
       typeof body.error?.message === "string"
         ? body.error.message
         : "图片上传失败。",
     );
   }
-  return body.url;
+  return {
+    url: body.url,
+    mimeType: body.mimeType,
+    sizeBytes: body.sizeBytes,
+  };
+}
+
+export async function uploadRecording(
+  file: File,
+  token: string,
+): Promise<Pick<AudioMetadata, "url" | "mimeType" | "sizeBytes">> {
+  return uploadFile(file, "recording", token);
 }
