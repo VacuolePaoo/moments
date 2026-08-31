@@ -241,7 +241,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(
                   void publishArticle();
                 }
               }}
-              className="h-32 min-h-32 resize-none text-base leading-6 md:text-base"
+              className="min-h-32 resize-none text-base leading-6 md:text-base"
               disabled={isSubmitting}
             />
           </>
