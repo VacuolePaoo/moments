@@ -32,6 +32,12 @@ import {
   FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -88,6 +94,7 @@ export function MomentsSettings() {
   const { isAdmin, isCheckingAdmin, getToken } = useAdminAccess();
   const { fileUploadConfigured, applySettings } = useSiteSettings();
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [savedSettings, setSavedSettings] = useState<AppSettings | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +114,7 @@ export function MomentsSettings() {
         retryRead(() => getHealth()),
       ]);
       setSettings(nextSettings);
+      setSavedSettings(nextSettings);
       applySettings(nextSettings);
       setHealth(nextHealth);
       setError(null);
@@ -131,18 +139,21 @@ export function MomentsSettings() {
     update: UpdateSettings,
     action: string,
     successMessage: string,
-  ) {
-    if (pendingAction) return;
+  ): Promise<AppSettings | null> {
+    if (pendingAction) return null;
     setPendingAction(action);
     try {
       const token = await getToken();
       if (!token) throw new Error("登录状态已失效。");
       const updated = await updateSettings(update, token);
       setSettings(updated);
+      setSavedSettings(updated);
       applySettings(updated);
       toast.add({ type: "success", description: successMessage });
+      return updated;
     } catch {
       toast.add({ type: "error", description: "设置保存失败，请稍后重试。" });
+      return null;
     } finally {
       setPendingAction(null);
     }
@@ -175,6 +186,7 @@ export function MomentsSettings() {
 
   function applyRestoreResult(result: RestoreBackupResult) {
     setSettings(result.settings);
+    setSavedSettings(result.settings);
     applySettings(result.settings);
     clearCachedHomeFeed();
     toast.add({
@@ -219,9 +231,7 @@ export function MomentsSettings() {
       }
 
       try {
-        applyRestoreResult(
-          await restoreCompleteBackup(backup, false, token),
-        );
+        applyRestoreResult(await restoreCompleteBackup(backup, false, token));
       } catch (restoreError) {
         if (
           restoreError instanceof MomentsApiError &&
@@ -293,7 +303,7 @@ export function MomentsSettings() {
       setClearConfirmation("");
       toast.add({
         type: "success",
-        description: `已清空 ${result.deletedPosts} 条说说和 ${result.deletedImages} 张图片。`,
+        description: `已清空 ${result.deletedPosts} 条说说和 ${result.deletedFiles} 个托管文件。`,
       });
     } catch {
       toast.add({ type: "error", description: "清空失败，数据未从 D1 删除。" });
@@ -336,10 +346,48 @@ export function MomentsSettings() {
             <TabsContent value="system" className="flex flex-col gap-12 pt-8">
               <SiteInformationSection
                 settings={settings}
-                pending={pendingAction === "site"}
+                savedSettings={savedSettings ?? settings}
+                pendingAction={pendingAction}
                 onChange={setSettings}
-                onSave={() =>
-                  void save({ site: settings.site }, "site", "站点信息已保存。")
+                onToggleShowName={(checked) => {
+                  const previous = savedSettings?.site.showName ?? !checked;
+                  setSettings((current) =>
+                    current
+                      ? {
+                          ...current,
+                          site: { ...current.site, showName: checked },
+                        }
+                      : current,
+                  );
+                  void save(
+                    { site: { showName: checked } },
+                    "site-show-name",
+                    "站点名称显示设置已保存。",
+                  ).then((updated) => {
+                    if (updated) return;
+                    setSettings((current) =>
+                      current
+                        ? {
+                            ...current,
+                            site: { ...current.site, showName: previous },
+                          }
+                        : current,
+                    );
+                  });
+                }}
+                onSaveName={() =>
+                  void save(
+                    { site: { name: settings.site.name } },
+                    "site-name",
+                    "站点名称已保存。",
+                  )
+                }
+                onSaveDescription={() =>
+                  void save(
+                    { site: { description: settings.site.description } },
+                    "site-description",
+                    "站点简介已保存。",
+                  )
                 }
               />
               <RuntimeStatusSection
@@ -414,7 +462,9 @@ export function MomentsSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>覆盖相同 ID 的说说？</AlertDialogTitle>
             <AlertDialogDescription>
-              当前数据库中有 {restoreCandidate?.preview.conflictCount ?? 0} 条说说与备份 ID 相同。继续后将以备份内容覆盖这些记录，同时恢复备份中的站点设置；此操作不会修改图床文件。
+              当前数据库中有 {restoreCandidate?.preview.conflictCount ?? 0}{" "}
+              条说说与备份 ID
+              相同。继续后将以备份内容覆盖这些记录，同时恢复备份中的站点设置；此操作不会修改文件托管服务中的文件。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -461,55 +511,70 @@ function SettingsSection({
 
 function SiteInformationSection({
   settings,
-  pending,
+  savedSettings,
+  pendingAction,
   onChange,
-  onSave,
+  onToggleShowName,
+  onSaveName,
+  onSaveDescription,
 }: {
   settings: AppSettings;
-  pending: boolean;
+  savedSettings: AppSettings;
+  pendingAction: string | null;
   onChange: (settings: AppSettings) => void;
-  onSave: () => void;
+  onToggleShowName: (checked: boolean) => void;
+  onSaveName: () => void;
+  onSaveDescription: () => void;
 }) {
+  const sitePending = pendingAction !== null;
+  const nameChanged = settings.site.name !== savedSettings.site.name;
+  const descriptionChanged =
+    settings.site.description !== savedSettings.site.description;
   return (
     <SettingsSection id="site-information-heading" title="站点信息">
       <FieldGroup>
-        <Field orientation="horizontal" data-disabled={pending}>
+        <Field orientation="horizontal" data-disabled={sitePending}>
           <FieldContent>
             <FieldTitle className={BODY_TEXT_CLASS}>显示站点名称</FieldTitle>
           </FieldContent>
           <Switch
             aria-label="显示站点名称"
             checked={settings.site.showName}
-            disabled={pending}
-            onCheckedChange={(checked) =>
-              onChange({
-                ...settings,
-                site: { ...settings.site, showName: checked },
-              })
-            }
+            disabled={sitePending}
+            onCheckedChange={onToggleShowName}
           />
         </Field>
         {settings.site.showName ? (
-          <Field data-disabled={pending}>
+          <Field data-disabled={sitePending}>
             <FieldLabel htmlFor="site-name" className={BODY_TEXT_CLASS}>
               站点名称
             </FieldLabel>
-            <Input
-              id="site-name"
-              value={settings.site.name}
-              maxLength={80}
-              disabled={pending}
-              onChange={(event) =>
-                onChange({
-                  ...settings,
-                  site: { ...settings.site, name: event.target.value },
-                })
-              }
-            />
+            <InputGroup>
+              <InputGroupInput
+                id="site-name"
+                value={settings.site.name}
+                maxLength={80}
+                disabled={sitePending}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    site: { ...settings.site, name: event.target.value },
+                  })
+                }
+              />
+              {nameChanged ? (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton disabled={sitePending} onClick={onSaveName}>
+                    {pendingAction === "site-name" ? <Spinner /> : null}
+                    保存
+                  </InputGroupButton>
+                </InputGroupAddon>
+              ) : null}
+            </InputGroup>
             <FieldDescription>未设置时默认显示 Moments。</FieldDescription>
           </Field>
         ) : null}
-        <Field data-disabled={pending}>
+        <Field data-disabled={sitePending}>
           <FieldLabel htmlFor="site-description" className={BODY_TEXT_CLASS}>
             站点简介
           </FieldLabel>
@@ -518,7 +583,7 @@ function SiteInformationSection({
             value={settings.site.description}
             maxLength={280}
             className="min-h-24 resize-none text-base leading-6"
-            disabled={pending}
+            disabled={sitePending}
             onChange={(event) =>
               onChange({
                 ...settings,
@@ -526,18 +591,23 @@ function SiteInformationSection({
               })
             }
           />
+          {descriptionChanged ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                disabled={sitePending}
+                onClick={onSaveDescription}
+              >
+                {pendingAction === "site-description" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : null}
+                保存简介
+              </Button>
+            </div>
+          ) : null}
         </Field>
       </FieldGroup>
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          disabled={pending || settings.site.name.trim().length === 0}
-          onClick={onSave}
-        >
-          {pending ? <Spinner data-icon="inline-start" /> : null}
-          保存站点信息
-        </Button>
-      </div>
     </SettingsSection>
   );
 }
@@ -626,9 +696,7 @@ function StatusRow({
     <TableRow>
       <TableCell className={BODY_TEXT_CLASS}>{title}</TableCell>
       <TableCell className="text-right">
-        <Badge
-          variant={value === null ? "outline" : value ? "default" : "destructive"}
-        >
+        <Badge variant={value ? "success" : "warning"}>
           {value === null ? "检测中" : value ? positive : negative}
         </Badge>
       </TableCell>
@@ -682,7 +750,7 @@ function DatabaseOperationsSection({
         </ActionField>
         <ActionField
           title="恢复备份"
-          description="恢复全部说说与站点设置，不会上传、删除或校验图床文件。"
+          description="恢复全部说说与站点设置，不会上传、删除或校验托管文件。"
         >
           <Input
             ref={restoreInputRef}
@@ -712,24 +780,15 @@ function DatabaseOperationsSection({
           </Button>
         </ActionField>
         <ActionField title="强制刷新统计数据">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
+          <StatisticsRefreshButton
             disabled={!statisticsEnabled || pendingAction !== null}
-            onClick={onRefreshStatistics}
-          >
-            {pendingAction === "statistics-rebuild" ? (
-              <Spinner data-icon="inline-start" />
-            ) : (
-              <RefreshCwIcon data-icon="inline-start" />
-            )}
-            刷新
-          </Button>
+            pending={pendingAction === "statistics-rebuild"}
+            onConfirm={onRefreshStatistics}
+          />
         </ActionField>
         <ActionField
           title="清空数据"
-          description="永久删除全部说说及其托管图片，无法撤销。"
+          description="永久删除全部说说及其托管图片、录音，无法撤销。"
         >
           <AlertDialog
             open={clearDialogOpen}
@@ -752,7 +811,8 @@ function DatabaseOperationsSection({
               <AlertDialogHeader>
                 <AlertDialogTitle>清空全部说说？</AlertDialogTitle>
                 <AlertDialogDescription>
-                  此操作会先删除图床文件，全部成功后再清空 D1。请输入“{CLEAR_CONFIRMATION}”继续。
+                  此操作会先删除文件托管服务中的文件，全部成功后再清空
+                  D1。请输入“{CLEAR_CONFIRMATION}”继续。
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <Field
@@ -817,10 +877,56 @@ function ActionField({
     <Field orientation="horizontal">
       <FieldContent>
         <FieldTitle className={BODY_TEXT_CLASS}>{title}</FieldTitle>
-        {description ? <FieldDescription>{description}</FieldDescription> : null}
+        {description ? (
+          <FieldDescription>{description}</FieldDescription>
+        ) : null}
       </FieldContent>
       {children}
     </Field>
+  );
+}
+
+function StatisticsRefreshButton({
+  disabled,
+  pending,
+  onConfirm,
+}: {
+  disabled: boolean;
+  pending: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+          />
+        }
+      >
+        {pending ? (
+          <Spinner data-icon="inline-start" />
+        ) : (
+          <RefreshCwIcon data-icon="inline-start" />
+        )}
+        刷新
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>强制刷新统计数据？</AlertDialogTitle>
+          <AlertDialogDescription>
+            此操作会重新扫描全部说说并重建统计数据，可能产生大量数据库读取和写入。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>确认刷新</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -844,20 +950,11 @@ function FeatureSettingsSection({
           </FieldContent>
           <div className="flex shrink-0 items-center gap-2">
             {settings.features.statistics ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
+              <StatisticsRefreshButton
                 disabled={pendingAction !== null}
-                onClick={onRefreshStatistics}
-              >
-                {pendingAction === "statistics-rebuild" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RefreshCwIcon data-icon="inline-start" />
-                )}
-                刷新
-              </Button>
+                pending={pendingAction === "statistics-rebuild"}
+                onConfirm={onRefreshStatistics}
+              />
             ) : null}
             <Switch
               aria-label="统计信息"
