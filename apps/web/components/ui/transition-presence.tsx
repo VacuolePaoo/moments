@@ -95,7 +95,7 @@ export function TransitionPresence({
         className,
       )}
     >
-      {collapse ? <div className="min-h-0">{children}</div> : children}
+      {collapse ? <div className="min-h-0 min-w-0">{children}</div> : children}
     </div>
   );
 }
