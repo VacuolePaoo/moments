@@ -27,7 +27,7 @@ function configuredImgBed(env: ImgBedBindings) {
     throw new ApiError(
       503,
       "IMAGE_DELETE_NOT_CONFIGURED",
-      "Image deletion is not configured.",
+      "Hosted file deletion is not configured.",
     );
   }
 
@@ -38,7 +38,7 @@ function configuredImgBed(env: ImgBedBindings) {
     throw new ApiError(
       503,
       "IMAGE_DELETE_NOT_CONFIGURED",
-      "Image deletion is not configured.",
+      "Hosted file deletion is not configured.",
     );
   }
   const localHttp =
@@ -50,7 +50,7 @@ function configuredImgBed(env: ImgBedBindings) {
     throw new ApiError(
       503,
       "IMAGE_DELETE_NOT_CONFIGURED",
-      "Image deletion is not configured.",
+      "Hosted file deletion is not configured.",
     );
   }
   return { baseUrl, token, endpoint: `${rawBaseUrl}/api/manage/delete/batch` };
@@ -140,7 +140,7 @@ async function deleteBatch(
     throw new ApiError(
       502,
       "IMAGE_DELETE_FAILED",
-      "One or more hosted images could not be deleted.",
+      "One or more hosted files could not be deleted.",
     );
   }
 
@@ -202,7 +202,7 @@ async function deleteBatch(
   throw new ApiError(
     502,
     "IMAGE_DELETE_FAILED",
-    "One or more hosted images could not be deleted.",
+    "One or more hosted files could not be deleted.",
   );
 }
 
@@ -232,7 +232,7 @@ async function deleteSingle(
     throw new ApiError(
       502,
       "IMAGE_DELETE_FAILED",
-      "The hosted image could not be deleted.",
+      "The hosted file could not be deleted.",
     );
   }
 }
@@ -262,7 +262,7 @@ async function deleteSingles(
   );
   if (failure) {
     if (failure.reason instanceof Error) throw failure.reason;
-    throw new Error("Image deletion failed with a non-error rejection.");
+    throw new Error("Hosted file deletion failed with a non-error rejection.");
   }
 }
 

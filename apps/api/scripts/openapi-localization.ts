@@ -55,8 +55,8 @@ const translations: Readonly<Record<string, string>> = {
   "Soft-delete a post": "将内容移入回收站",
   "Restore a soft-deleted post": "恢复回收站内容",
   "List soft-deleted posts": "分页获取回收站内容",
-  "Permanently delete a post and its managed hosted images":
-    "永久删除内容及其托管图片",
+  "Permanently delete a post and its managed hosted files":
+    "永久删除内容及其托管文件",
   "Delete one hosted image and detach it from a post":
     "删除单张托管图片并从内容中移除其 URL",
   "Get an RSS 2.0 feed for the most recent 20 Shanghai calendar days":
@@ -72,8 +72,8 @@ const translations: Readonly<Record<string, string>> = {
     "校验备份并预检内容 ID 冲突",
   "Restore posts and settings from a structured backup":
     "从结构化备份恢复内容与设置",
-  "Permanently delete all posts and their managed images":
-    "永久删除全部内容及其托管图片",
+  "Permanently delete all posts and their managed hosted files":
+    "永久删除全部内容及其托管文件",
   "The Worker can query D1.": "Worker 可以正常查询 D1。",
   "D1 is unavailable.": "D1 当前不可用。",
   "A newest-first cursor page, or a full day with navigation in date mode.":
@@ -97,15 +97,15 @@ const translations: Readonly<Record<string, string>> = {
   "Post not found.": "内容不存在。",
   "Invalid post ID.": "内容 ID 无效。",
   "Post updated.": "内容更新成功。",
-  "Hosted images must be deleted through the post image endpoint.":
-    "托管图片必须通过内容图片删除接口移除。",
+  "Hosted images require the image endpoint, and audio moments cannot be edited.":
+    "托管图片必须通过内容图片删除接口移除，声音内容暂不支持编辑。",
   "Invalid request.": "请求无效。",
   "Post moved to the recycle bin.": "内容已移入回收站。",
   "Post restored.": "内容恢复成功。",
   "Post is not deleted.": "内容不在回收站中。",
   "A newest-deleted-first cursor page.":
     "按删除时间从新到旧排列的回收站游标分页结果。",
-  "Hosted images and post permanently deleted.": "托管图片和内容已永久删除。",
+  "Hosted files and post permanently deleted.": "托管文件和内容已永久删除。",
   "Hosted image deleted and post image list updated.":
     "托管图片已删除，内容图片列表已更新。",
   "Post or attached image not found.": "内容或其所附图片不存在。",
@@ -114,7 +114,9 @@ const translations: Readonly<Record<string, string>> = {
   "An RSS 2.0 XML document containing public posts.":
     "包含公开内容的 RSS 2.0 XML 文档。",
   "Post is not in the trash.": "内容不在回收站中。",
-  "Hosted image deletion failed.": "托管图片删除失败。",
+  "Hosted file deletion failed.": "托管文件删除失败。",
+  "Authentication or hosted file deletion is not configured.":
+    "身份认证或托管文件删除服务尚未配置。",
   "Authentication or hosted image deletion is not configured.":
     "身份认证或托管图片删除服务尚未配置。",
   "Authentication status.": "当前用户的身份认证与管理员状态。",
@@ -130,8 +132,8 @@ const translations: Readonly<Record<string, string>> = {
   "The backup is invalid or unsupported.": "备份无效或版本不受支持。",
   "Existing post IDs conflict and overwrite was not confirmed.":
     "存在相同内容 ID，且尚未确认覆盖。",
-  "All hosted images and posts were permanently deleted.":
-    "全部托管图片与内容均已永久删除。",
+  "All hosted files and posts were permanently deleted.":
+    "全部托管文件与内容均已永久删除。",
   "Content is not public.": "内容当前未公开。",
   "The feature is disabled.": "该功能已关闭。",
   "Settings are not initialized.": "设置尚未初始化。",
@@ -139,8 +141,7 @@ const translations: Readonly<Record<string, string>> = {
   "The confirmation phrase is invalid.": "确认文字无效。",
   "Administrator access and the configured origin are required.":
     "需要管理员权限，且请求必须来自已配置源站。",
-  "Settings or authentication are not configured.":
-    "设置或身份认证尚未配置。",
+  "Settings or authentication are not configured.": "设置或身份认证尚未配置。",
 };
 
 const schemaPropertyDescriptions: Readonly<
@@ -149,7 +150,7 @@ const schemaPropertyDescriptions: Readonly<
   Health: {
     status: "Worker 健康状态。",
     database: "D1 数据库健康状态。",
-    fileOperationsConfigured: "Worker 是否配置了图床地址。",
+    fileOperationsConfigured: "Worker 是否配置了文件托管服务地址。",
     timestamp: "服务器生成响应时的 ISO 8601 时间。",
   },
   Error: {
@@ -164,8 +165,10 @@ const schemaPropertyDescriptions: Readonly<
   },
   Post: {
     id: "稳定的内容 UUID。",
-    content: "规范化后的正文。图片内容允许为空字符串。",
+    kind: "内容形式：文章或声音。",
+    content: "规范化后的正文。图片文章或声音内容允许为空字符串。",
     images: "内容所附的有序图片 URL 列表。",
+    audio: "声音内容的托管文件信息；文章内容为 null。",
     createdAt: "创建时间，ISO 8601 格式。",
     updatedAt: "最后更新时间，ISO 8601 格式。",
     edited: "内容是否在创建后编辑过。",
@@ -191,6 +194,23 @@ const schemaPropertyDescriptions: Readonly<
     content: "正文；保存前会规范化连续空格、制表符和换行。",
     images: "有序图片 URL 列表，最多 18 张；正文和图片至少提供一项。",
   },
+  CreateArticlePost: {
+    kind: "固定为 article。",
+    content: "正文；保存前会规范化连续空格、制表符和换行。",
+    images: "有序图片 URL 列表，最多 18 张。",
+  },
+  CreateAudioPost: {
+    kind: "固定为 audio。",
+    content: "声音内容固定为空字符串。",
+    images: "声音内容固定不包含图片。",
+    audio: "录音托管文件及播放元数据。",
+  },
+  AudioMetadata: {
+    url: "录音文件的托管 URL。",
+    durationMs: "录音时长，单位为毫秒。",
+    mimeType: "录音文件 MIME 类型。",
+    sizeBytes: "录音文件字节数。",
+  },
   DeletePostImage: {
     imageUrl: "要删除的托管图片完整 URL。",
   },
@@ -200,8 +220,10 @@ const schemaPropertyDescriptions: Readonly<
   },
   DeletedPost: {
     id: "稳定的内容 UUID。",
+    kind: "内容形式：文章或声音。",
     content: "规范化后的正文。",
     images: "内容所附的有序图片 URL 列表。",
+    audio: "声音内容的托管文件信息；文章内容为 null。",
     createdAt: "创建时间，ISO 8601 格式。",
     updatedAt: "最后更新时间，ISO 8601 格式。",
     edited: "内容是否在创建后编辑过。",
@@ -239,8 +261,10 @@ const schemaPropertyDescriptions: Readonly<
   },
   BackupPost: {
     id: "稳定的内容 UUID。",
+    kind: "内容形式；旧备份缺省时按文章恢复。",
     content: "备份中的正文。",
     images: "备份中的有序图片 URL 列表。",
+    audio: "备份中的录音托管文件信息。",
     createdAt: "原始创建时间，ISO 8601 格式。",
     updatedAt: "原始更新时间，ISO 8601 格式。",
     edited: "内容是否在创建后编辑过。",
@@ -270,7 +294,7 @@ const schemaPropertyDescriptions: Readonly<
   },
   ClearPostsResult: {
     deletedPosts: "已删除的内容数量。",
-    deletedImages: "已删除的托管图片数量。",
+    deletedFiles: "已删除的托管图片与录音文件数量。",
   },
 };
 

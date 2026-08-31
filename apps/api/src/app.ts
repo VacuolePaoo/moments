@@ -10,17 +10,14 @@ import {
   requireAuthentication,
   verifyClerkSession,
 } from "./auth";
-import {
-  previewBackupRestore,
-  restoreBackup,
-} from "./db/backup";
+import { previewBackupRestore, restoreBackup } from "./db/backup";
 import {
   assertPostImageAttached,
   clearAllPosts,
   createPost,
-  getAllPostImages,
+  getAllPostFiles,
   getDateDetail,
-  getDeletedPostImages,
+  getDeletedPostFiles,
   getPostDetail,
   getRandomDateDetail,
   listDeletedPosts,
@@ -58,6 +55,7 @@ import {
   ClearPostsResultSchema,
   ClearPostsSchema,
   CompleteBackupSchema,
+  CreatePostSchema,
   DeletePostImageSchema,
   DeletedPostListSchema,
   ErrorSchema,
@@ -333,7 +331,7 @@ const createPostRoute = createRoute({
   summary: "Create a post",
   security: [{ ClerkBearer: [] }],
   request: {
-    body: { required: true, content: jsonContent(WritePostSchema) },
+    body: { required: true, content: jsonContent(CreatePostSchema) },
   },
   responses: {
     201: { description: "Post created.", content: jsonContent(PostSchema) },
@@ -362,7 +360,7 @@ const updatePostRoute = createRoute({
     403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
     409: errorResponseDefinition(
-      "Hosted images must be deleted through the post image endpoint.",
+      "Hosted images require the image endpoint, and audio moments cannot be edited.",
     ),
     422: errorResponseDefinition("Invalid request."),
     500: errorResponseDefinition("Unexpected server error."),
@@ -469,11 +467,11 @@ const permanentlyDeletePostRoute = createRoute({
   path: "/api/v1/trash/{id}",
   operationId: "permanentlyDeletePost",
   tags: ["Trash"],
-  summary: "Permanently delete a post and its managed hosted images",
+  summary: "Permanently delete a post and its managed hosted files",
   security: [{ ClerkBearer: [] }],
   request: { params: z.object({ id: PostIdSchema }) },
   responses: {
-    204: { description: "Hosted images and post permanently deleted." },
+    204: { description: "Hosted files and post permanently deleted." },
     401: errorResponseDefinition("Authentication required."),
     403: errorResponseDefinition("Administrator access required."),
     404: errorResponseDefinition("Post not found."),
@@ -547,7 +545,9 @@ const getSettingsRoute = createRoute({
     401: errorResponseDefinition("Authentication required."),
     403: errorResponseDefinition("Administrator access required."),
     500: errorResponseDefinition("Unexpected server error."),
-    503: errorResponseDefinition("Settings or authentication are not configured."),
+    503: errorResponseDefinition(
+      "Settings or authentication are not configured.",
+    ),
   },
 });
 
@@ -570,7 +570,9 @@ const updateSettingsRoute = createRoute({
     403: errorResponseDefinition("Administrator access required."),
     422: errorResponseDefinition("Invalid settings."),
     500: errorResponseDefinition("Unexpected server error."),
-    503: errorResponseDefinition("Settings or authentication are not configured."),
+    503: errorResponseDefinition(
+      "Settings or authentication are not configured.",
+    ),
   },
 });
 
@@ -589,7 +591,9 @@ const createBackupRoute = createRoute({
     401: errorResponseDefinition("Authentication required."),
     403: errorResponseDefinition("Administrator access required."),
     500: errorResponseDefinition("Unexpected server error."),
-    503: errorResponseDefinition("Settings or authentication are not configured."),
+    503: errorResponseDefinition(
+      "Settings or authentication are not configured.",
+    ),
   },
 });
 
@@ -647,7 +651,9 @@ const restoreBackupRoute = createRoute({
     413: errorResponseDefinition("The backup payload is too large."),
     422: errorResponseDefinition("The backup is invalid or unsupported."),
     500: errorResponseDefinition("Unexpected server error."),
-    503: errorResponseDefinition("Settings or authentication are not configured."),
+    503: errorResponseDefinition(
+      "Settings or authentication are not configured.",
+    ),
   },
 });
 
@@ -656,23 +662,25 @@ const clearPostsRoute = createRoute({
   path: "/api/v1/maintenance/clear-posts",
   operationId: "clearAllPosts",
   tags: ["Maintenance"],
-  summary: "Permanently delete all posts and their managed images",
+  summary: "Permanently delete all posts and their managed hosted files",
   security: [{ ClerkBearer: [] }],
   request: {
     body: { required: true, content: jsonContent(ClearPostsSchema) },
   },
   responses: {
     200: {
-      description: "All hosted images and posts were permanently deleted.",
+      description: "All hosted files and posts were permanently deleted.",
       content: jsonContent(ClearPostsResultSchema),
     },
     401: errorResponseDefinition("Authentication required."),
-    403: errorResponseDefinition("Administrator access and the configured origin are required."),
+    403: errorResponseDefinition(
+      "Administrator access and the configured origin are required.",
+    ),
     422: errorResponseDefinition("The confirmation phrase is invalid."),
     500: errorResponseDefinition("Unexpected server error."),
-    502: errorResponseDefinition("Hosted image deletion failed."),
+    502: errorResponseDefinition("Hosted file deletion failed."),
     503: errorResponseDefinition(
-      "Authentication or hosted image deletion is not configured.",
+      "Authentication or hosted file deletion is not configured.",
     ),
   },
 });
@@ -841,8 +849,16 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.openapi(createPostRoute, async (c) => {
-    const input = normalizePostInput(c.req.valid("json"));
-    return c.json(await createPost(c.env.DB, input.content, input.images), 201);
+    const input = c.req.valid("json");
+    return c.json(
+      await createPost(
+        c.env.DB,
+        input.kind === "audio"
+          ? input
+          : { kind: "article", ...normalizePostInput(input) },
+      ),
+      201,
+    );
   });
 
   app.openapi(updatePostRoute, async (c) => {
@@ -881,8 +897,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.openapi(permanentlyDeletePostRoute, async (c) => {
     const { id } = c.req.valid("param");
-    const images = await getDeletedPostImages(c.env.DB, id);
-    await imageDeleter(images, c.env);
+    const files = await getDeletedPostFiles(c.env.DB, id);
+    await imageDeleter(files, c.env);
     await permanentlyDeletePost(c.env.DB, id);
     return c.body(null, 204);
   });
@@ -909,10 +925,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.openapi(updateSettingsRoute, async (c) => {
     const current = await getAppSettings(c.env.DB);
     const updated = await updateAppSettings(c.env.DB, c.req.valid("json"));
-    if (
-      !current.features.statistics &&
-      updated.features.statistics
-    ) {
+    if (!current.features.statistics && updated.features.statistics) {
       await rebuildStatisticsAggregates(c.env.DB);
     }
     return c.json(updated, 200);
@@ -955,15 +968,12 @@ export function createApp(options: CreateAppOptions = {}) {
     assertConfiguredOrigin(c);
 
     c.req.valid("json");
-    const images = await getAllPostImages(c.env.DB);
-    for (let index = 0; index < images.length; index += 500) {
-      await imageDeleter(images.slice(index, index + 500), c.env);
+    const files = await getAllPostFiles(c.env.DB);
+    for (let index = 0; index < files.length; index += 500) {
+      await imageDeleter(files.slice(index, index + 500), c.env);
     }
     const deletedPosts = await clearAllPosts(c.env.DB);
-    return c.json(
-      { deletedPosts, deletedImages: images.length },
-      200,
-    );
+    return c.json({ deletedPosts, deletedFiles: files.length }, 200);
   });
 
   app.openAPIRegistry.registerComponent("securitySchemes", "ClerkBearer", {

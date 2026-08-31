@@ -190,6 +190,13 @@
             "description": "Stable post ID.",
             "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio"
+            ]
+          },
           "content": {
             "type": "string",
             "example": "今天完成了 Moments API。"
@@ -205,6 +212,9 @@
               "https://file.example.com/file/example.jpg"
             ]
           },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -219,12 +229,48 @@
         },
         "required": [
           "id",
+          "kind",
           "content",
           "images",
+          "audio",
           "createdAt",
           "updatedAt",
           "edited"
         ]
+      },
+      "AudioMetadata": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1800000
+          },
+          "mimeType": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 33554432
+          }
+        },
+        "required": [
+          "url",
+          "durationMs",
+          "mimeType",
+          "sizeBytes"
+        ],
+        "additionalProperties": false
       },
       "MomentStatistics": {
         "type": "object",
@@ -335,6 +381,80 @@
           "navigation"
         ]
       },
+      "CreatePost": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CreateArticlePost"
+          },
+          {
+            "$ref": "#/components/schemas/CreateAudioPost"
+          }
+        ]
+      },
+      "CreateArticlePost": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "default": "",
+            "description": "Plain text. Consecutive spaces, tabs and line breaks are normalized before storage."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "maxItems": 18,
+            "default": [],
+            "description": "Ordered image URLs, at most 18. Text or at least one image is required."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article"
+            ],
+            "default": "article"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateAudioPost": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "audio"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "enum": [
+              ""
+            ],
+            "default": ""
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "maxItems": 18,
+            "default": [],
+            "description": "Ordered image URLs attached to this audio moment, at most 18."
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata"
+          }
+        },
+        "required": [
+          "kind",
+          "audio"
+        ],
+        "additionalProperties": false
+      },
       "WritePost": {
         "type": "object",
         "properties": {
@@ -393,22 +513,65 @@
         ]
       },
       "DeletedPost": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Post"
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable post ID.",
+            "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
-          {
-            "type": "object",
-            "properties": {
-              "deletedAt": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "deletedAt"
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio"
             ]
+          },
+          "content": {
+            "type": "string",
+            "example": "今天完成了 Moments API。"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Ordered image URLs attached to this post.",
+            "example": [
+              "https://file.example.com/file/example.jpg"
+            ]
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "edited": {
+            "type": "boolean"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
           }
+        },
+        "required": [
+          "id",
+          "kind",
+          "content",
+          "images",
+          "audio",
+          "createdAt",
+          "updatedAt",
+          "edited",
+          "deletedAt"
         ]
       },
       "AuthStatus": {
@@ -462,7 +625,6 @@
           },
           "name": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 80,
             "default": "Moments"
           },
@@ -526,14 +688,11 @@
               },
               "name": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 80,
-                "default": "Moments"
+                "maxLength": 80
               },
               "description": {
                 "type": "string",
-                "maxLength": 280,
-                "default": ""
+                "maxLength": 280
               }
             },
             "additionalProperties": false
@@ -610,6 +769,14 @@
             "description": "Stable post ID.",
             "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio"
+            ],
+            "default": "article"
+          },
           "content": {
             "type": "string",
             "maxLength": 1000000
@@ -622,6 +789,9 @@
               "format": "uri"
             },
             "maxItems": 18
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata"
           },
           "createdAt": {
             "type": "string",
@@ -750,14 +920,14 @@
             "type": "integer",
             "minimum": 0
           },
-          "deletedImages": {
+          "deletedFiles": {
             "type": "integer",
             "minimum": 0
           }
         },
         "required": [
           "deletedPosts",
-          "deletedImages"
+          "deletedFiles"
         ],
         "additionalProperties": false
       },
@@ -954,7 +1124,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WritePost"
+                "$ref": "#/components/schemas/CreatePost"
               }
             }
           }
@@ -1428,7 +1598,7 @@
             }
           },
           "409": {
-            "description": "Hosted images must be deleted through the post image endpoint.",
+            "description": "Hosted images require the image endpoint, and audio moments cannot be edited.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1905,7 +2075,7 @@
         "tags": [
           "Trash"
         ],
-        "summary": "Permanently delete a post and its managed hosted images",
+        "summary": "Permanently delete a post and its managed hosted files",
         "security": [
           {
             "ClerkBearer": []
@@ -1927,7 +2097,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Hosted images and post permanently deleted."
+            "description": "Hosted files and post permanently deleted."
           },
           "401": {
             "description": "Authentication required.",
@@ -2533,7 +2703,7 @@
         "tags": [
           "Maintenance"
         ],
-        "summary": "Permanently delete all posts and their managed images",
+        "summary": "Permanently delete all posts and their managed hosted files",
         "security": [
           {
             "ClerkBearer": []
@@ -2551,7 +2721,7 @@
         },
         "responses": {
           "200": {
-            "description": "All hosted images and posts were permanently deleted.",
+            "description": "All hosted files and posts were permanently deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2601,7 +2771,7 @@
             }
           },
           "502": {
-            "description": "Hosted image deletion failed.",
+            "description": "Hosted file deletion failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2611,7 +2781,7 @@
             }
           },
           "503": {
-            "description": "Authentication or hosted image deletion is not configured.",
+            "description": "Authentication or hosted file deletion is not configured.",
             "content": {
               "application/json": {
                 "schema": {

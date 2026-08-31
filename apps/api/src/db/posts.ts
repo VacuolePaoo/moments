@@ -3,6 +3,7 @@ import { getShanghaiDayBounds, toShanghaiDate } from "../lib/date";
 import { ApiError } from "../lib/errors";
 import type {
   CompleteBackup,
+  CreatePostInput,
   DeletedPost,
   DeletedPostList,
   Post,
@@ -18,8 +19,13 @@ export interface DateDetail {
 
 interface PostRow {
   id: string;
+  kind: "article" | "audio";
   content: string;
   images_json: string;
+  audio_url: string | null;
+  audio_duration_ms: number | null;
+  audio_mime_type: string | null;
+  audio_size_bytes: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -54,8 +60,9 @@ interface PostDetailRow extends PostRow {
   older_id: string | null;
 }
 
-interface DeletedPostImagesRow {
+interface DeletedPostFilesRow {
   images_json: string;
+  audio_url: string | null;
   deleted_at: string | null;
 }
 
@@ -71,10 +78,28 @@ function parseImages(value: string): string[] {
 }
 
 function toPost(row: PostRow): Post {
+  const audio =
+    row.kind === "audio" &&
+    row.audio_url !== null &&
+    row.audio_duration_ms !== null &&
+    row.audio_mime_type !== null &&
+    row.audio_size_bytes !== null
+      ? {
+          url: row.audio_url,
+          durationMs: row.audio_duration_ms,
+          mimeType: row.audio_mime_type,
+          sizeBytes: row.audio_size_bytes,
+        }
+      : null;
+  if (row.kind === "audio" && audio === null) {
+    throw new Error("Invalid audio moment stored in D1.");
+  }
   return {
     id: row.id,
+    kind: row.kind,
     content: row.content,
     images: parseImages(row.images_json),
+    audio,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     edited: row.updated_at !== row.created_at,
@@ -85,9 +110,10 @@ function toDeletedPost(row: DeletedPostRow): DeletedPost {
   return { ...toPost(row), deletedAt: row.deleted_at };
 }
 
-const postColumns = "id, content, images_json, created_at, updated_at";
+const postColumns =
+  "id, kind, content, images_json, audio_url, audio_duration_ms, audio_mime_type, audio_size_bytes, created_at, updated_at";
 const qualifiedPostColumns =
-  "p.id, p.content, p.images_json, p.created_at, p.updated_at";
+  "p.id, p.kind, p.content, p.images_json, p.audio_url, p.audio_duration_ms, p.audio_mime_type, p.audio_size_bytes, p.created_at, p.updated_at";
 
 function cursorPage<Row, Item>(
   rows: Row[],
@@ -414,25 +440,42 @@ export async function getPostDetail(
 
 export async function createPost(
   db: D1Database,
-  content: string,
-  images: string[],
+  input: CreatePostInput,
 ): Promise<Post> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  const imagesJson = JSON.stringify(images);
+  const content = input.kind === "audio" ? "" : input.content;
+  const images = input.images;
+  const audio = input.kind === "audio" ? input.audio : null;
 
   await db
     .prepare(
-      `INSERT INTO posts (id, content, images_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (
+         id, kind, content, images_json, audio_url, audio_duration_ms,
+         audio_mime_type, audio_size_bytes, created_at, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(id, content, imagesJson, now, now)
+    .bind(
+      id,
+      input.kind,
+      content,
+      JSON.stringify(images),
+      audio?.url ?? null,
+      audio?.durationMs ?? null,
+      audio?.mimeType ?? null,
+      audio?.sizeBytes ?? null,
+      now,
+      now,
+    )
     .run();
 
   return {
     id,
+    kind: input.kind,
     content,
     images,
+    audio,
     createdAt: now,
     updatedAt: now,
     edited: false,
@@ -451,7 +494,7 @@ export async function updatePost(
     .prepare(
       `UPDATE posts
        SET content = ?, images_json = ?, updated_at = ?
-       WHERE id = ? AND deleted_at IS NULL
+       WHERE id = ? AND kind = 'article' AND deleted_at IS NULL
          AND NOT EXISTS (
            SELECT 1
            FROM json_each(posts.images_json) AS existing_image
@@ -475,11 +518,18 @@ async function throwPostUpdateError(
   id: string,
 ): Promise<never> {
   const existing = await db
-    .prepare("SELECT id FROM posts WHERE id = ? AND deleted_at IS NULL")
+    .prepare("SELECT id, kind FROM posts WHERE id = ? AND deleted_at IS NULL")
     .bind(id)
-    .first<IdRow>();
+    .first<IdRow & { kind: "article" | "audio" }>();
   if (existing === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
+  }
+  if (existing.kind === "audio") {
+    throw new ApiError(
+      409,
+      "POST_TYPE_NOT_EDITABLE",
+      "Audio moments cannot be edited.",
+    );
   }
   throw new ApiError(
     409,
@@ -585,18 +635,18 @@ export async function restorePost(db: D1Database, id: string): Promise<Post> {
   return toPost(restored);
 }
 
-export async function getDeletedPostImages(
+export async function getDeletedPostFiles(
   db: D1Database,
   id: string,
 ): Promise<string[]> {
   const row = await db
     .prepare(
-      `SELECT images_json, deleted_at
+      `SELECT images_json, audio_url, deleted_at
        FROM posts
        WHERE id = ?`,
     )
     .bind(id)
-    .first<DeletedPostImagesRow>();
+    .first<DeletedPostFilesRow>();
 
   if (row === null) {
     throw new ApiError(404, "POST_NOT_FOUND", "The post does not exist.");
@@ -604,7 +654,10 @@ export async function getDeletedPostImages(
   if (row.deleted_at === null) {
     throw new ApiError(409, "POST_NOT_DELETED", "The post is not deleted.");
   }
-  return parseImages(row.images_json);
+  return [
+    ...parseImages(row.images_json),
+    ...(row.audio_url === null ? [] : [row.audio_url]),
+  ];
 }
 
 export async function permanentlyDeletePost(
@@ -641,20 +694,30 @@ export async function listAllPostsForBackup(
   }));
 }
 
-export async function getAllPostImages(db: D1Database): Promise<string[]> {
+export async function getAllPostFiles(db: D1Database): Promise<string[]> {
   const rows = (
-    await db.prepare("SELECT images_json FROM posts").all<{
+    await db.prepare("SELECT images_json, audio_url FROM posts").all<{
       images_json: string;
+      audio_url: string | null;
     }>()
   ).results;
-  return [...new Set(rows.flatMap((row) => parseImages(row.images_json)))];
+  return [
+    ...new Set(
+      rows.flatMap((row) => [
+        ...parseImages(row.images_json),
+        ...(row.audio_url === null ? [] : [row.audio_url]),
+      ]),
+    ),
+  ];
 }
 
 export async function clearAllPosts(db: D1Database): Promise<number> {
   const count =
-    (await db
-      .prepare("SELECT COUNT(*) AS count FROM posts")
-      .first<{ count: number }>())?.count ?? 0;
+    (
+      await db
+        .prepare("SELECT COUNT(*) AS count FROM posts")
+        .first<{ count: number }>()
+    )?.count ?? 0;
   await db.batch([
     db.prepare("DELETE FROM posts"),
     db.prepare("DELETE FROM public_post_slots"),

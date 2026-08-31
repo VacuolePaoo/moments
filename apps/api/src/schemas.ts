@@ -7,18 +7,52 @@ export const PostIdSchema = z.uuid().openapi({
   example: "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e",
 });
 
+const AudioMetadataSchema = z
+  .strictObject({
+    url: z.url().max(2_048),
+    durationMs: z.number().int().min(1).max(1_800_000),
+    mimeType: z.string().startsWith("audio/").max(100),
+    sizeBytes: z.number().int().min(1).max(33_554_432),
+  })
+  .openapi("AudioMetadata");
+
+function validatePostKind(
+  post: {
+    kind: "article" | "audio";
+    content: string;
+    images: string[];
+    audio: z.infer<typeof AudioMetadataSchema> | null;
+  },
+  context: z.RefinementCtx,
+): void {
+  const valid =
+    post.kind === "article"
+      ? post.audio === null
+      : post.content.length === 0 && post.audio !== null;
+  if (!valid) {
+    context.addIssue({
+      code: "custom",
+      message: "Article text and audio metadata cannot be mixed.",
+      path: ["kind"],
+    });
+  }
+}
+
 export const PostSchema = z
   .object({
     id: PostIdSchema,
+    kind: z.enum(["article", "audio"]),
     content: z.string().openapi({ example: "今天完成了 Moments API。" }),
     images: z.array(z.url()).openapi({
       description: "Ordered image URLs attached to this post.",
       example: ["https://file.example.com/file/example.jpg"],
     }),
+    audio: AudioMetadataSchema.nullable(),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
     edited: z.boolean(),
   })
+  .superRefine(validatePostKind)
   .openapi("Post");
 
 export type Post = z.infer<typeof PostSchema>;
@@ -55,7 +89,7 @@ export const PostListSchema = z
 
 export type PostList = z.infer<typeof PostListSchema>;
 
-const DeletedPostSchema = PostSchema.extend({
+const DeletedPostSchema = PostSchema.safeExtend({
   deletedAt: z.iso.datetime({ offset: true }),
 }).openapi("DeletedPost");
 
@@ -114,7 +148,7 @@ export type MomentStatistics = z.infer<typeof MomentStatisticsSchema>;
 const SiteSettingsSchema = z
   .strictObject({
     showName: z.boolean(),
-    name: z.string().trim().min(1).max(80).default("Moments"),
+    name: z.string().trim().max(80).default("Moments"),
     description: z.string().trim().max(280).default(""),
   })
   .openapi("SiteSettings");
@@ -147,7 +181,15 @@ export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
 export const UpdateSettingsSchema = z
   .strictObject({
-    site: SiteSettingsSchema.partial().optional(),
+    // Keep PATCH fields free of response defaults. Zod applies defaults inside
+    // partial objects, which would otherwise reset omitted site fields.
+    site: z
+      .strictObject({
+        showName: z.boolean().optional(),
+        name: z.string().trim().max(80).optional(),
+        description: z.string().trim().max(280).optional(),
+      })
+      .optional(),
     features: FeatureSettingsSchema.partial().optional(),
     content: ContentSettingsSchema.partial().optional(),
   })
@@ -165,16 +207,24 @@ export type UpdateSettings = z.infer<typeof UpdateSettingsSchema>;
 const BackupPostSchema = z
   .strictObject({
     id: PostIdSchema,
+    kind: z.enum(["article", "audio"]).default("article"),
     content: z.string().max(1_000_000),
     images: z.array(z.url().max(2_048)).max(18),
+    audio: AudioMetadataSchema.nullable().default(null),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
     edited: z.boolean(),
     deletedAt: z.iso.datetime({ offset: true }).nullable(),
   })
-  .refine(({ createdAt, updatedAt, edited }) => edited === (updatedAt !== createdAt), {
-    message: "edited must match whether updatedAt differs from createdAt.",
-    path: ["edited"],
+  .superRefine((post, context) => {
+    validatePostKind(post, context);
+    if (post.edited !== (post.updatedAt !== post.createdAt)) {
+      context.addIssue({
+        code: "custom",
+        message: "edited must match whether updatedAt differs from createdAt.",
+        path: ["edited"],
+      });
+    }
   })
   .openapi("BackupPost");
 
@@ -243,7 +293,7 @@ export const ClearPostsSchema = z
 export const ClearPostsResultSchema = z
   .strictObject({
     deletedPosts: z.number().int().nonnegative(),
-    deletedImages: z.number().int().nonnegative(),
+    deletedFiles: z.number().int().nonnegative(),
   })
   .openapi("ClearPostsResult");
 
@@ -263,6 +313,27 @@ export const WritePostSchema = z
     { message: "Text or at least one image is required." },
   )
   .openapi("WritePost");
+
+const CreateAudioPostSchema = z
+  .strictObject({
+    kind: z.literal("audio"),
+    content: z.literal("").default(""),
+    images: z.array(z.url()).max(18).default([]).openapi({
+      description: "Ordered image URLs attached to this audio moment, at most 18.",
+    }),
+    audio: AudioMetadataSchema,
+  })
+  .openapi("CreateAudioPost");
+
+const CreateArticlePostSchema = WritePostSchema.safeExtend({
+  kind: z.literal("article").default("article"),
+}).openapi("CreateArticlePost");
+
+export const CreatePostSchema = z
+  .union([CreateArticlePostSchema, CreateAudioPostSchema])
+  .openapi("CreatePost");
+
+export type CreatePostInput = z.infer<typeof CreatePostSchema>;
 
 export const DeletePostImageSchema = z
   .strictObject({

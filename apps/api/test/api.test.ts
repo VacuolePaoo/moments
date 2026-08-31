@@ -127,13 +127,37 @@ describe("Moments API", () => {
       content: { public: true, pageSize: 7 },
     });
 
+    const showNameOnlyResponse = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", { site: { showName: true } }),
+      env,
+    );
+    expect(showNameOnlyResponse.status).toBe(200);
+    await expect(showNameOnlyResponse.json()).resolves.toMatchObject({
+      site: {
+        showName: true,
+        name: "我的 Moments",
+        description: "记录每一天",
+      },
+    });
+
+    const blankNameResponse = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", { site: { name: "" } }),
+      env,
+    );
+    expect(blankNameResponse.status).toBe(200);
+    await expect(blankNameResponse.json()).resolves.toMatchObject({
+      site: { name: "" },
+    });
+
     const persisted = await app.request(
       "/api/v1/settings",
       jsonRequest("GET"),
       env,
     );
     await expect(persisted.json()).resolves.toMatchObject({
-      site: { name: "我的 Moments" },
+      site: { name: "" },
       content: { pageSize: 7 },
     });
   });
@@ -286,7 +310,7 @@ describe("Moments API", () => {
     expect(clearResponse.status).toBe(200);
     await expect(clearResponse.json()).resolves.toEqual({
       deletedPosts: 1,
-      deletedImages: 1,
+      deletedFiles: 1,
     });
     expect(deletedImages).toEqual([[image]]);
     await expect(
@@ -426,7 +450,9 @@ describe("Moments API", () => {
         .first(),
     ).resolves.toEqual({ content: "数据库中的现有版本" });
     await expect(
-      env.DB.prepare("SELECT id FROM posts WHERE id = ?").bind(secondId).first(),
+      env.DB.prepare("SELECT id FROM posts WHERE id = ?")
+        .bind(secondId)
+        .first(),
     ).resolves.toBeNull();
     await expect(
       env.DB.prepare("SELECT site_name FROM settings WHERE id = 1").first(),
@@ -592,6 +618,133 @@ describe("Moments API", () => {
     expect(emptyResponse.status).toBe(422);
   });
 
+  it("creates an audio moment with images and deletes every hosted file before D1", async () => {
+    const deletedFiles: string[][] = [];
+    const app = createApp({
+      tokenVerifier: adminVerifier,
+      imageDeleter: (files) => {
+        deletedFiles.push(files);
+        return Promise.resolve();
+      },
+    });
+    const audioUrl = "https://file.vacu.top/file/recording/voice.webm";
+    const imageUrl = "https://file.vacu.top/file/moments/audio-cover.webp";
+    const response = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", {
+        kind: "audio",
+        images: [imageUrl],
+        audio: {
+          url: audioUrl,
+          durationMs: 12_345,
+          mimeType: "audio/webm;codecs=opus",
+          sizeBytes: 45_678,
+        },
+      }),
+      env,
+    );
+    expect(response.status).toBe(201);
+    const created = await response.json<{
+      id: string;
+      kind: string;
+      content: string;
+      images: string[];
+      audio: { url: string; durationMs: number };
+    }>();
+    expect(created).toMatchObject({
+      kind: "audio",
+      content: "",
+      images: [imageUrl],
+      audio: { url: audioUrl, durationMs: 12_345 },
+    });
+
+    const mixedResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", {
+        kind: "audio",
+        content: "不能混合正文",
+        audio: {
+          url: audioUrl,
+          durationMs: 1,
+          mimeType: "audio/webm",
+          sizeBytes: 1,
+        },
+      }),
+      env,
+    );
+    expect(mixedResponse.status).toBe(422);
+
+    const editResponse = await app.request(
+      `/api/v1/posts/${created.id}`,
+      jsonRequest("PATCH", { content: "不能编辑声音", images: [] }),
+      env,
+    );
+    expect(editResponse.status).toBe(409);
+
+    expect(
+      (
+        await app.request(
+          `/api/v1/posts/${created.id}`,
+          jsonRequest("DELETE"),
+          env,
+        )
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await app.request(
+          `/api/v1/trash/${created.id}`,
+          jsonRequest("DELETE"),
+          env,
+        )
+      ).status,
+    ).toBe(204);
+    expect(deletedFiles).toEqual([[imageUrl, audioUrl]]);
+  });
+
+  it("round-trips audio moments through structured backup restore", async () => {
+    const app = createApp({ tokenVerifier: adminVerifier });
+    const audio = {
+      url: "https://file.vacu.top/file/recording/backup.webm",
+      durationMs: 9_876,
+      mimeType: "audio/webm",
+      sizeBytes: 12_345,
+    };
+    const createResponse = await app.request(
+      "/api/v1/posts",
+      jsonRequest("POST", { kind: "audio", audio }),
+      env,
+    );
+    expect(createResponse.status).toBe(201);
+
+    const backupResponse = await app.request(
+      "/api/v1/maintenance/backup",
+      jsonRequest("GET"),
+      env,
+    );
+    const backup = await backupResponse.json<unknown>();
+    await clearPosts();
+
+    const restoreResponse = await app.request(
+      "/api/v1/maintenance/restore",
+      jsonRequest("POST", { backup, overwriteConflicts: false }),
+      env,
+    );
+    expect(restoreResponse.status).toBe(200);
+
+    const listResponse = await app.request("/api/v1/posts", {}, env);
+    await expect(listResponse.json()).resolves.toMatchObject({
+      items: [
+        {
+          kind: "audio",
+          content: "",
+          images: [],
+          audio,
+        },
+      ],
+    });
+  });
+
   it("deletes a hosted image before detaching it from a post", async () => {
     const deletedImages: string[][] = [];
     const app = createApp({
@@ -691,6 +844,8 @@ describe("Moments API", () => {
     ).toISOString();
     const recentId = "99999999-9999-4999-8999-999999999991";
     const expiredId = "99999999-9999-4999-8999-999999999992";
+    const audioId = "99999999-9999-4999-8999-999999999993";
+    const audioUrl = "https://file.example.com/file/recording/rss.webm";
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO posts (id, content, images_json, created_at, updated_at)
@@ -706,6 +861,12 @@ describe("Moments API", () => {
         `INSERT INTO posts (id, content, images_json, created_at, updated_at)
          VALUES (?, '过期内容', '[]', ?, ?)`,
       ).bind(expiredId, expiredAt, expiredAt),
+      env.DB.prepare(
+        `INSERT INTO posts (
+           id, kind, content, images_json, audio_url, audio_duration_ms,
+           audio_mime_type, audio_size_bytes, created_at, updated_at
+         ) VALUES (?, 'audio', '', '[]', ?, 5000, 'audio/webm', 4321, ?, ?)`,
+      ).bind(audioId, audioUrl, recentAt, recentAt),
     ]);
 
     const response = await createApp().request("/rss.xml", {}, env);
@@ -716,6 +877,10 @@ describe("Moments API", () => {
     const rss = await response.text();
     expect(rss).toContain('<rss version="2.0"');
     expect(rss).toContain(`urn:uuid:${recentId}`);
+    expect(rss).toContain(`urn:uuid:${audioId}`);
+    expect(rss).toContain(
+      `<enclosure url="${audioUrl}" length="4321" type="audio/webm" />`,
+    );
     expect(rss).not.toContain(expiredId);
     expect(rss).toContain("RSS &lt;内容&gt; &amp; 订阅");
     expect(rss).toContain(`${env.ALLOWED_ORIGIN}/rss.xml`);

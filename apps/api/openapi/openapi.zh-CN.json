@@ -74,7 +74,7 @@
           },
           "fileOperationsConfigured": {
             "type": "boolean",
-            "description": "Worker 是否配置了图床地址。"
+            "description": "Worker 是否配置了文件托管服务地址。"
           },
           "timestamp": {
             "type": "string",
@@ -203,10 +203,18 @@
             "description": "稳定的内容 UUID。",
             "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio"
+            ],
+            "description": "内容形式：文章或声音。"
+          },
           "content": {
             "type": "string",
             "example": "今天完成了 Moments API。",
-            "description": "规范化后的正文。图片内容允许为空字符串。"
+            "description": "规范化后的正文。图片文章或声音内容允许为空字符串。"
           },
           "images": {
             "type": "array",
@@ -218,6 +226,10 @@
             "example": [
               "https://file.example.com/file/example.jpg"
             ]
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata",
+            "description": "声音内容的托管文件信息；文章内容为 null。"
           },
           "createdAt": {
             "type": "string",
@@ -236,12 +248,52 @@
         },
         "required": [
           "id",
+          "kind",
           "content",
           "images",
+          "audio",
           "createdAt",
           "updatedAt",
           "edited"
         ]
+      },
+      "AudioMetadata": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri",
+            "description": "录音文件的托管 URL。"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1800000,
+            "description": "录音时长，单位为毫秒。"
+          },
+          "mimeType": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "录音文件 MIME 类型。"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 33554432,
+            "description": "录音文件字节数。"
+          }
+        },
+        "required": [
+          "url",
+          "durationMs",
+          "mimeType",
+          "sizeBytes"
+        ],
+        "additionalProperties": false
       },
       "MomentStatistics": {
         "type": "object",
@@ -360,6 +412,84 @@
           "navigation"
         ]
       },
+      "CreatePost": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CreateArticlePost"
+          },
+          {
+            "$ref": "#/components/schemas/CreateAudioPost"
+          }
+        ]
+      },
+      "CreateArticlePost": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "default": "",
+            "description": "正文；保存前会规范化连续空格、制表符和换行。"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "maxItems": 18,
+            "default": [],
+            "description": "有序图片 URL 列表，最多 18 张。"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article"
+            ],
+            "default": "article",
+            "description": "固定为 article。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateAudioPost": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "audio"
+            ],
+            "description": "固定为 audio。"
+          },
+          "content": {
+            "type": "string",
+            "enum": [
+              ""
+            ],
+            "default": "",
+            "description": "声音内容固定为空字符串。"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "maxItems": 18,
+            "default": [],
+            "description": "声音内容固定不包含图片。"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata",
+            "description": "录音托管文件及播放元数据。"
+          }
+        },
+        "required": [
+          "kind",
+          "audio"
+        ],
+        "additionalProperties": false
+      },
       "WritePost": {
         "type": "object",
         "properties": {
@@ -420,22 +550,72 @@
         ]
       },
       "DeletedPost": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Post"
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "稳定的内容 UUID。",
+            "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
-          {
-            "type": "object",
-            "properties": {
-              "deletedAt": {
-                "type": "string",
-                "format": "date-time"
-              }
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio"
+            ],
+            "description": "内容形式：文章或声音。"
+          },
+          "content": {
+            "type": "string",
+            "example": "今天完成了 Moments API。",
+            "description": "规范化后的正文。"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
             },
-            "required": [
-              "deletedAt"
+            "description": "内容所附的有序图片 URL 列表。",
+            "example": [
+              "https://file.example.com/file/example.jpg"
             ]
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata",
+            "description": "声音内容的托管文件信息；文章内容为 null。"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "创建时间，ISO 8601 格式。"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "最后更新时间，ISO 8601 格式。"
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "内容是否在创建后编辑过。"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "移入回收站的时间，ISO 8601 格式。"
           }
+        },
+        "required": [
+          "id",
+          "kind",
+          "content",
+          "images",
+          "audio",
+          "createdAt",
+          "updatedAt",
+          "edited",
+          "deletedAt"
         ]
       },
       "AuthStatus": {
@@ -496,7 +676,6 @@
           },
           "name": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 80,
             "default": "Moments",
             "description": "站点名称。"
@@ -567,14 +746,11 @@
               },
               "name": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 80,
-                "default": "Moments"
+                "maxLength": 80
               },
               "description": {
                 "type": "string",
-                "maxLength": 280,
-                "default": ""
+                "maxLength": 280
               }
             },
             "additionalProperties": false
@@ -655,6 +831,15 @@
             "description": "稳定的内容 UUID。",
             "example": "b3d4da0e-9d8d-43ee-a6a2-c0139814d59e"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio"
+            ],
+            "default": "article",
+            "description": "内容形式；旧备份缺省时按文章恢复。"
+          },
           "content": {
             "type": "string",
             "maxLength": 1000000,
@@ -669,6 +854,10 @@
             },
             "maxItems": 18,
             "description": "备份中的有序图片 URL 列表。"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioMetadata",
+            "description": "备份中的录音托管文件信息。"
           },
           "createdAt": {
             "type": "string",
@@ -813,15 +1002,15 @@
             "minimum": 0,
             "description": "已删除的内容数量。"
           },
-          "deletedImages": {
+          "deletedFiles": {
             "type": "integer",
             "minimum": 0,
-            "description": "已删除的托管图片数量。"
+            "description": "已删除的托管图片与录音文件数量。"
           }
         },
         "required": [
           "deletedPosts",
-          "deletedImages"
+          "deletedFiles"
         ],
         "additionalProperties": false
       },
@@ -1019,7 +1208,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WritePost"
+                "$ref": "#/components/schemas/CreatePost"
               }
             }
           }
@@ -1493,7 +1682,7 @@
             }
           },
           "409": {
-            "description": "托管图片必须通过内容图片删除接口移除。",
+            "description": "托管图片必须通过内容图片删除接口移除，声音内容暂不支持编辑。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1724,7 +1913,7 @@
             }
           },
           "502": {
-            "description": "托管图片删除失败。",
+            "description": "Hosted image deletion failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1970,7 +2159,7 @@
         "tags": [
           "回收站"
         ],
-        "summary": "永久删除内容及其托管图片",
+        "summary": "永久删除内容及其托管文件",
         "security": [
           {
             "ClerkBearer": []
@@ -1992,7 +2181,7 @@
         ],
         "responses": {
           "204": {
-            "description": "托管图片和内容已永久删除。"
+            "description": "托管文件和内容已永久删除。"
           },
           "401": {
             "description": "需要登录。",
@@ -2055,7 +2244,7 @@
             }
           },
           "502": {
-            "description": "托管图片删除失败。",
+            "description": "Hosted image deletion failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2598,7 +2787,7 @@
         "tags": [
           "数据维护"
         ],
-        "summary": "永久删除全部内容及其托管图片",
+        "summary": "永久删除全部内容及其托管文件",
         "security": [
           {
             "ClerkBearer": []
@@ -2616,7 +2805,7 @@
         },
         "responses": {
           "200": {
-            "description": "全部托管图片与内容均已永久删除。",
+            "description": "全部托管文件与内容均已永久删除。",
             "content": {
               "application/json": {
                 "schema": {
@@ -2666,7 +2855,7 @@
             }
           },
           "502": {
-            "description": "托管图片删除失败。",
+            "description": "托管文件删除失败。",
             "content": {
               "application/json": {
                 "schema": {
@@ -2676,7 +2865,7 @@
             }
           },
           "503": {
-            "description": "身份认证或托管图片删除服务尚未配置。",
+            "description": "身份认证或托管文件删除服务尚未配置。",
             "content": {
               "application/json": {
                 "schema": {

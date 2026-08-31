@@ -18,6 +18,7 @@ function escapeXml(value: string): string {
 }
 
 function postTitle(post: Post): string {
+  if (post.kind === "audio") return "声音 Moment";
   const compact = post.content.replace(/\s+/gu, " ").trim();
   if (compact.length === 0)
     return `图片 Moment（${String(post.images.length)} 张）`;
@@ -28,6 +29,9 @@ function postTitle(post: Post): string {
 }
 
 function postDescription(post: Post): string {
+  if (post.kind === "audio" && post.audio) {
+    return `声音：${post.audio.url}`;
+  }
   return [
     post.content,
     ...post.images.map((image, index) => `图片 ${String(index + 1)}：${image}`),
@@ -80,12 +84,16 @@ export function renderRss(
     .map((post) => {
       const date = toShanghaiDate(post.createdAt);
       const link = `${siteOrigin}/p/${date}`;
+      const enclosure =
+        post.kind === "audio" && post.audio
+          ? `\n      <enclosure url="${escapeXml(post.audio.url)}" length="${String(post.audio.sizeBytes)}" type="${escapeXml(post.audio.mimeType)}" />`
+          : "";
       return `    <item>
       <title>${escapeXml(postTitle(post))}</title>
       <link>${escapeXml(link)}</link>
       <guid isPermaLink="false">urn:uuid:${escapeXml(post.id)}</guid>
       <pubDate>${new Date(post.createdAt).toUTCString()}</pubDate>
-      <description>${escapeXml(postDescription(post))}</description>
+      <description>${escapeXml(postDescription(post))}</description>${enclosure}
     </item>`;
     })
     .join("\n");

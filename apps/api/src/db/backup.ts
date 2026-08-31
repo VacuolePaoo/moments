@@ -1,5 +1,6 @@
 import { ApiError } from "../lib/errors";
 import type { CompleteBackup, RestoreBackupResult } from "../schemas";
+import { siteNameForStorage } from "./settings";
 
 interface IdRow {
   id: string;
@@ -48,8 +49,13 @@ function postImportPayloads(posts: CompleteBackup["posts"]): string[] {
   return jsonArrayPayloads(posts, (post) => {
     const entry = JSON.stringify({
       id: post.id,
+      kind: post.kind,
       content: post.content,
       imagesJson: JSON.stringify(post.images),
+      audioUrl: post.audio?.url ?? null,
+      audioDurationMs: post.audio?.durationMs ?? null,
+      audioMimeType: post.audio?.mimeType ?? null,
+      audioSizeBytes: post.audio?.sizeBytes ?? null,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
       deletedAt: post.deletedAt,
@@ -69,16 +75,17 @@ function conflictIdsStatements(
   db: D1Database,
   backup: CompleteBackup,
 ): D1PreparedStatement[] {
-  return stringArrayPayloads(backup.posts.map((post) => post.id)).map((payload) =>
-    db
-      .prepare(
-        `SELECT posts.id
+  return stringArrayPayloads(backup.posts.map((post) => post.id)).map(
+    (payload) =>
+      db
+        .prepare(
+          `SELECT posts.id
          FROM posts
          INNER JOIN json_each(?) AS backup_ids
            ON posts.id = backup_ids.value
          ORDER BY posts.id`,
-      )
-      .bind(payload),
+        )
+        .bind(payload),
   );
 }
 
@@ -86,15 +93,16 @@ function conflictCountStatements(
   db: D1Database,
   backup: CompleteBackup,
 ): D1PreparedStatement[] {
-  return stringArrayPayloads(backup.posts.map((post) => post.id)).map((payload) =>
-    db
-      .prepare(
-        `SELECT COUNT(*) AS conflict_count
+  return stringArrayPayloads(backup.posts.map((post) => post.id)).map(
+    (payload) =>
+      db
+        .prepare(
+          `SELECT COUNT(*) AS conflict_count
          FROM posts
          INNER JOIN json_each(?) AS backup_ids
            ON posts.id = backup_ids.value`,
-      )
-      .bind(payload),
+        )
+        .bind(payload),
   );
 }
 
@@ -123,6 +131,11 @@ function importStatement(
     ? `ON CONFLICT(id) DO UPDATE SET
          content = excluded.content,
          images_json = excluded.images_json,
+         kind = excluded.kind,
+         audio_url = excluded.audio_url,
+         audio_duration_ms = excluded.audio_duration_ms,
+         audio_mime_type = excluded.audio_mime_type,
+         audio_size_bytes = excluded.audio_size_bytes,
          created_at = excluded.created_at,
          updated_at = excluded.updated_at,
          deleted_at = excluded.deleted_at`
@@ -130,15 +143,21 @@ function importStatement(
   return db
     .prepare(
       `INSERT INTO posts (
-         id, content, images_json, created_at, updated_at, deleted_at
+         id, kind, content, images_json, audio_url, audio_duration_ms,
+         audio_mime_type, audio_size_bytes, created_at, updated_at, deleted_at
        )
        SELECT
          json_extract(value, '$.id'),
+         json_extract(value, '$.kind'),
          json_extract(value, '$.content'),
          json_extract(value, '$.imagesJson'),
+         json_extract(value, '$.audioUrl'),
+         json_extract(value, '$.audioDurationMs'),
+         json_extract(value, '$.audioMimeType'),
+         json_extract(value, '$.audioSizeBytes'),
          json_extract(value, '$.createdAt'),
-       json_extract(value, '$.updatedAt'),
-       json_extract(value, '$.deletedAt')
+         json_extract(value, '$.updatedAt'),
+         json_extract(value, '$.deletedAt')
        FROM json_each(?)
        WHERE true
        ${conflictClause}`,
@@ -175,7 +194,7 @@ export async function restoreBackup(
       )
       .bind(
         Number(backup.settings.site.showName),
-        backup.settings.site.name,
+        siteNameForStorage(backup.settings.site.name),
         backup.settings.site.description,
         Number(backup.settings.features.statistics),
         Number(backup.settings.features.random),
