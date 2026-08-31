@@ -188,50 +188,58 @@ export function EditableImageAttachments({
   if (images.length === 0) return null;
 
   return (
-    <AttachmentGroup role="group" aria-label="待发布图片" tabIndex={0}>
-      {images.map((image) => (
-        <Attachment
-          key={image.id}
-          state={image.state}
-          orientation="vertical"
-          size="sm"
-          className="w-32 sm:w-36"
-        >
-          <AttachmentMedia variant="image" className="w-full!">
-            <Image
-              loader={passthroughLoader}
-              unoptimized
-              fill
-              sizes="144px"
-              src={image.previewUrl}
-              alt={image.name}
-            />
-          </AttachmentMedia>
-          <AttachmentContent>
-            <AttachmentTitle>{image.name}</AttachmentTitle>
-            <AttachmentDescription>
-              {image.state === "uploading"
-                ? "正在上传"
-                : image.state === "error"
-                  ? "上传失败"
-                  : image.file
-                    ? formatFileSize(image.file.size)
-                    : "已上传"}
-            </AttachmentDescription>
-          </AttachmentContent>
-          <AttachmentActions>
-            <AttachmentAction
-              type="button"
-              aria-label={`移除 ${image.name}`}
-              disabled={disabled}
-              onClick={() => onRemove(image)}
-            >
-              <XIcon />
-            </AttachmentAction>
-          </AttachmentActions>
-        </Attachment>
-      ))}
-    </AttachmentGroup>
+    <ScrollArea className="w-full min-w-0 max-w-full overflow-hidden">
+      <AttachmentGroup
+        role="group"
+        aria-label="待发布图片"
+        tabIndex={0}
+        className="w-max min-w-full overflow-visible pb-3"
+      >
+        {images.map((image) => (
+          <Attachment
+            key={image.id}
+            state={image.state}
+            orientation="vertical"
+            size="sm"
+            className="w-32 sm:w-36"
+          >
+            <AttachmentMedia variant="image" className="w-full!">
+              <Image
+                loader={passthroughLoader}
+                unoptimized
+                fill
+                sizes="144px"
+                src={image.previewUrl}
+                alt={image.name}
+              />
+            </AttachmentMedia>
+            <AttachmentContent>
+              <AttachmentTitle>{image.name}</AttachmentTitle>
+              <AttachmentDescription>
+                {image.state === "uploading"
+                  ? "正在上传"
+                  : image.state === "error"
+                    ? "上传失败"
+                    : image.file
+                      ? formatFileSize(image.file.size)
+                      : "已上传"}
+              </AttachmentDescription>
+            </AttachmentContent>
+            <AttachmentActions>
+              <AttachmentAction
+                type="button"
+                aria-label={`移除 ${image.name}`}
+                disabled={disabled}
+                onClick={() => onRemove(image)}
+              >
+                <XIcon />
+              </AttachmentAction>
+            </AttachmentActions>
+          </Attachment>
+        ))}
+      </AttachmentGroup>
+      <ScrollBar orientation="horizontal" />
+    </ScrollArea>
   );
 }
 
