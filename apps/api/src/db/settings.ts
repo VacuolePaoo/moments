@@ -17,11 +17,17 @@ function toBoolean(value: number): boolean {
   return value === 1;
 }
 
+// Migration 0005 requires at least one stored character. A single space keeps
+// existing deployments compatible while the API exposes an intentional blank.
+export function siteNameForStorage(value: string): string {
+  return value.length === 0 ? " " : value;
+}
+
 function toAppSettings(row: SettingsRow): AppSettings {
   return {
     site: {
       showName: toBoolean(row.show_site_name),
-      name: row.site_name || "Moments",
+      name: row.site_name.trim(),
       description: row.site_description,
     },
     features: {
@@ -77,8 +83,7 @@ export async function updateAppSettings(
       description: update.site?.description ?? current.site.description,
     },
     features: {
-      statistics:
-        update.features?.statistics ?? current.features.statistics,
+      statistics: update.features?.statistics ?? current.features.statistics,
       random: update.features?.random ?? current.features.random,
       rss: update.features?.rss ?? current.features.rss,
     },
@@ -106,7 +111,7 @@ export async function updateAppSettings(
     )
     .bind(
       Number(next.site.showName),
-      next.site.name,
+      siteNameForStorage(next.site.name),
       next.site.description,
       Number(next.features.statistics),
       Number(next.features.random),
@@ -118,7 +123,11 @@ export async function updateAppSettings(
     .run();
 
   if (result.meta.changes !== 1) {
-    throw new ApiError(500, "SETTINGS_UPDATE_FAILED", "Settings were not updated.");
+    throw new ApiError(
+      500,
+      "SETTINGS_UPDATE_FAILED",
+      "Settings were not updated.",
+    );
   }
   return next;
 }
