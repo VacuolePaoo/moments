@@ -53,6 +53,10 @@ export function replaceCachedDatePosts(
   };
 }
 
+export function readCachedPost(id: string): MomentPost | null {
+  return cachedHomeFeed?.posts.find((post) => post.id === id) ?? null;
+}
+
 export function updateCachedPost(post: MomentPost): void {
   if (!cachedHomeFeed) return;
   cachedHomeFeed = {

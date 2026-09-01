@@ -41,6 +41,14 @@ export interface DateDetail {
   };
 }
 
+export interface PostDetail {
+  post: MomentPost;
+  navigation: {
+    newerId: string | null;
+    olderId: string | null;
+  };
+}
+
 export interface MomentStatistics {
   days: Array<{ date: string; count: number }>;
   administratorNarrative: Array<{
@@ -249,6 +257,17 @@ export async function getDateDetail(
 ): Promise<DateDetail> {
   const page = await listPosts({ date, signal }, token);
   return dateDetailFromPage(page);
+}
+
+export function getPost(
+  id: string,
+  signal?: AbortSignal,
+  token?: string,
+): Promise<PostDetail> {
+  return request<PostDetail>(`/api/v1/posts/${encodeURIComponent(id)}`, {
+    signal,
+    token,
+  });
 }
 
 export function getMomentStatistics(

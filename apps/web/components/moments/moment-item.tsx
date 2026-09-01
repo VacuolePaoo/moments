@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import {
   EllipsisIcon,
   ImagePlusIcon,
+  LinkIcon,
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -83,6 +84,15 @@ interface MomentReadOnlyProps {
   eagerImages?: boolean;
 }
 
+async function copyPostLink(id: string) {
+  try {
+    await navigator.clipboard.writeText(`${window.location.origin}/m/${id}`);
+    toast.add({ title: "链接已复制" });
+  } catch {
+    toast.add({ type: "error", description: "复制失败，请稍后重试。" });
+  }
+}
+
 function hasImageChanges(images: EditableImage[], original: string[]) {
   return (
     images.length !== original.length ||
@@ -139,10 +149,12 @@ function EditedLabel() {
 
 function MomentActions({
   post,
+  isAdmin,
   onDelete,
   onEdit,
 }: {
   post: MomentPost;
+  isAdmin: boolean;
   onDelete: (post: MomentPost) => void;
   onEdit?: () => void;
 }) {
@@ -169,19 +181,25 @@ function MomentActions({
       </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuGroup>
-          {post.kind === "article" && onEdit ? (
+          <DropdownMenuItem onClick={() => void copyPostLink(post.id)}>
+            <LinkIcon />
+            复制链接
+          </DropdownMenuItem>
+          {isAdmin && post.kind === "article" && onEdit ? (
             <DropdownMenuItem onClick={onEdit}>
               <PencilIcon />
               编辑
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => onDelete(post)}
-          >
-            <Trash2Icon />
-            删除
-          </DropdownMenuItem>
+          {isAdmin ? (
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => onDelete(post)}
+            >
+              <Trash2Icon />
+              删除
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -398,11 +416,16 @@ export function MomentItem({
       ) : null}
 
       <TransitionPresence
-        show={isAdmin && !isEditing && !isAudio}
+        show={!isEditing && !isAudio}
         animateOnMount={false}
         className={`absolute top-0 right-0 z-10 shrink-0 ${hoverRevealClasses}`}
       >
-        <MomentActions post={post} onEdit={beginEditing} onDelete={onDelete} />
+        <MomentActions
+          post={post}
+          isAdmin={isAdmin}
+          onEdit={beginEditing}
+          onDelete={onDelete}
+        />
       </TransitionPresence>
 
       {isEditing ? (
@@ -484,10 +507,7 @@ export function MomentItem({
         </form>
       ) : (
         <div
-          className={cn(
-            "min-w-0 max-w-full",
-            isAdmin && !isAudio ? "pr-10" : undefined,
-          )}
+          className={cn("min-w-0 max-w-full", !isAudio ? "pr-10" : undefined)}
         >
           <MomentBody
             post={post}
@@ -500,7 +520,11 @@ export function MomentItem({
                   animateOnMount={false}
                   className={hoverRevealClasses}
                 >
-                  <MomentActions post={post} onDelete={onDelete} />
+                  <MomentActions
+                    post={post}
+                    isAdmin={isAdmin}
+                    onDelete={onDelete}
+                  />
                 </TransitionPresence>
               ) : undefined
             }
