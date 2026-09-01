@@ -63,6 +63,8 @@ export interface AudioMetadata {
   sizeBytes: number;
 }
 
+export type WeekdayLanguage = "zh" | "en" | "ja";
+
 export interface AppSettings {
   site: {
     showName: boolean;
@@ -78,6 +80,10 @@ export interface AppSettings {
     public: boolean;
     voice: boolean;
     pageSize: number;
+    shareToolbar: boolean;
+  };
+  format: {
+    weekdayLanguage: WeekdayLanguage;
   };
   updatedAt: string;
 }
@@ -86,6 +92,7 @@ export interface UpdateSettings {
   site?: Partial<AppSettings["site"]>;
   features?: Partial<AppSettings["features"]>;
   content?: Partial<AppSettings["content"]>;
+  format?: Partial<AppSettings["format"]>;
 }
 
 export interface HealthStatus {

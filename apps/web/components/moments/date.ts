@@ -1,4 +1,4 @@
-import type { MomentPost } from "./api";
+import type { MomentPost, WeekdayLanguage } from "./api";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const datePartsFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -7,10 +7,26 @@ const datePartsFormatter = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 });
-const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai",
-  weekday: "long",
-});
+const weekdayLocales: Record<WeekdayLanguage, string> = {
+  zh: "zh-CN",
+  en: "en-US",
+  ja: "ja-JP",
+};
+
+const weekdayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function weekdayFormatter(language: WeekdayLanguage): Intl.DateTimeFormat {
+  const locale = weekdayLocales[language];
+  let formatter = weekdayFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      timeZone: "Asia/Shanghai",
+      weekday: "long",
+    });
+    weekdayFormatters.set(locale, formatter);
+  }
+  return formatter;
+}
 const timeFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Shanghai",
   hour: "2-digit",
@@ -36,11 +52,21 @@ export function toShanghaiDate(isoTimestamp: string): string {
   return `${year}-${month}-${day}`;
 }
 
-export function formatDateHeading(date: string): string {
+export function formatDateTitle(date: string): string {
   if (!isValidDate(date)) return date;
   const [year, month, day] = date.split("-");
-  const weekday = weekdayFormatter.format(new Date(`${date}T12:00:00+08:00`));
-  return `${year}年${Number(month)}月${Number(day)}日 ${weekday}`;
+  return `${year}年${Number(month)}月${Number(day)}日`;
+}
+
+export function formatDateHeading(
+  date: string,
+  weekdayLanguage: WeekdayLanguage = "zh",
+): string {
+  if (!isValidDate(date)) return date;
+  const weekday = weekdayFormatter(weekdayLanguage).format(
+    new Date(`${date}T12:00:00+08:00`),
+  );
+  return `${formatDateTitle(date)} ${weekday}`;
 }
 
 export function formatPostTime(isoTimestamp: string): string {

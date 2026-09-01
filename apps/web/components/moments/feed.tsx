@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import type { MomentPost } from "./api";
+import type { MomentPost, WeekdayLanguage } from "./api";
 import { formatDateHeading, groupPostsByDate } from "./date";
 import { MomentItem } from "./moment-item";
 
@@ -15,6 +15,7 @@ interface FeedProps {
   isAdmin: boolean;
   getToken: () => Promise<string | null>;
   showEdited?: boolean;
+  weekdayLanguage?: WeekdayLanguage;
   highlightDate?: string | null;
   isInitialLoading?: boolean;
   isLoadingMore?: boolean;
@@ -30,6 +31,7 @@ export function Feed({
   isAdmin,
   getToken,
   showEdited = false,
+  weekdayLanguage = "zh",
   highlightDate,
   isInitialLoading = false,
   isLoadingMore = false,
@@ -72,7 +74,7 @@ export function Feed({
                 href={`/p/${group.date}`}
                 className="cursor-pointer hover:opacity-70"
               >
-                {formatDateHeading(group.date)}
+                {formatDateHeading(group.date, weekdayLanguage)}
               </Link>
             </h2>
             <div>

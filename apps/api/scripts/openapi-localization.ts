@@ -142,6 +142,7 @@ const translations: Readonly<Record<string, string>> = {
   "Administrator access and the configured origin are required.":
     "需要管理员权限，且请求必须来自已配置源站。",
   "Settings or authentication are not configured.": "设置或身份认证尚未配置。",
+  "Display language used for weekday names.": "日期标题中星期名称的显示语言。",
 };
 
 const schemaPropertyDescriptions: Readonly<
@@ -247,11 +248,14 @@ const schemaPropertyDescriptions: Readonly<
     public: "未登录访问者是否可以读取内容。",
     voice: "语音发布是否启用；旧备份缺省时按启用恢复。",
     pageSize: "信息流每次加载数量。",
+    shareToolbar: "分享页面是否显示底部工具栏；旧备份缺省时按显示恢复。",
   },
+  FormatSettings: { weekdayLanguage: "日期标题中星期名称的显示语言。" },
   AppSettings: {
     site: "站点信息设置。",
     features: "功能开关。",
     content: "内容读取与分页设置。",
+    format: "日期格式设置。",
     updatedAt: "设置最后更新时间。",
   },
   CompleteBackup: {

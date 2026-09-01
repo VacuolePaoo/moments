@@ -161,6 +161,20 @@ const FeatureSettingsSchema = z
   })
   .openapi("FeatureSettings");
 
+export const WeekdayLanguageSchema = z
+  .enum(["zh", "en", "ja"])
+  .openapi({ description: "Display language used for weekday names." });
+
+export type WeekdayLanguage = z.infer<typeof WeekdayLanguageSchema>;
+
+const FormatSettingsSchema = z
+  .strictObject({
+    // Backups created before the weekday language switch existed omit this
+    // field; the default keeps them restorable.
+    weekdayLanguage: WeekdayLanguageSchema.default("zh"),
+  })
+  .openapi("FormatSettings");
+
 const ContentSettingsSchema = z
   .strictObject({
     public: z.boolean(),
@@ -168,6 +182,9 @@ const ContentSettingsSchema = z
     // field; the default keeps them restorable.
     voice: z.boolean().default(true),
     pageSize: z.number().int().min(1).max(100),
+    // Backups created before the share page toolbar switch existed omit this
+    // field; the default keeps them restorable.
+    shareToolbar: z.boolean().default(true),
   })
   .openapi("ContentSettings");
 
@@ -176,6 +193,9 @@ export const AppSettingsSchema = z
     site: SiteSettingsSchema,
     features: FeatureSettingsSchema,
     content: ContentSettingsSchema,
+    // Backups created before the date format group existed omit it; the default
+    // keeps them restorable.
+    format: FormatSettingsSchema.default({ weekdayLanguage: "zh" }),
     updatedAt: z.iso.datetime({ offset: true }),
   })
   .openapi("AppSettings");
@@ -199,6 +219,12 @@ export const UpdateSettingsSchema = z
         public: z.boolean().optional(),
         voice: z.boolean().optional(),
         pageSize: z.number().int().min(1).max(100).optional(),
+        shareToolbar: z.boolean().optional(),
+      })
+      .optional(),
+    format: z
+      .strictObject({
+        weekdayLanguage: WeekdayLanguageSchema.optional(),
       })
       .optional(),
   })
@@ -206,7 +232,8 @@ export const UpdateSettingsSchema = z
     (value) =>
       value.site !== undefined ||
       value.features !== undefined ||
-      value.content !== undefined,
+      value.content !== undefined ||
+      value.format !== undefined,
     { message: "At least one settings group is required." },
   )
   .openapi("UpdateSettings");
@@ -328,7 +355,8 @@ const CreateAudioPostSchema = z
     kind: z.literal("audio"),
     content: z.literal("").default(""),
     images: z.array(z.url()).max(18).default([]).openapi({
-      description: "Ordered image URLs attached to this audio moment, at most 18.",
+      description:
+        "Ordered image URLs attached to this audio moment, at most 18.",
     }),
     audio: AudioMetadataSchema,
   })

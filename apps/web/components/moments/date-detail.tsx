@@ -49,29 +49,33 @@ export function MomentDateDetail({ date }: { date: string }) {
 
   const contentRequiresAdmin = settings?.content.public === false;
   const accessChecking = contentRequiresAdmin && isCheckingAdmin;
-  const accessRestricted =
-    contentRequiresAdmin && !isCheckingAdmin && !isAdmin;
+  const accessRestricted = contentRequiresAdmin && !isCheckingAdmin && !isAdmin;
 
-  const load = useCallback(async (token?: string) => {
-    try {
-      const value = await retryRead(() => getDateDetail(date, undefined, token));
-      setDetail(value);
-      replaceCachedDatePosts(date, value.items);
-      setNotFound(false);
-      setError(null);
-    } catch (loadError) {
-      if (loadError instanceof MomentsApiError && loadError.status === 404) {
-        setDetail(null);
-        replaceCachedDatePosts(date, []);
-        setNotFound(true);
+  const load = useCallback(
+    async (token?: string) => {
+      try {
+        const value = await retryRead(() =>
+          getDateDetail(date, undefined, token),
+        );
+        setDetail(value);
+        replaceCachedDatePosts(date, value.items);
+        setNotFound(false);
         setError(null);
-      } else if (!initialDetail) {
-        setError("内容加载失败，请稍后重试。");
+      } catch (loadError) {
+        if (loadError instanceof MomentsApiError && loadError.status === 404) {
+          setDetail(null);
+          replaceCachedDatePosts(date, []);
+          setNotFound(true);
+          setError(null);
+        } else if (!initialDetail) {
+          setError("内容加载失败，请稍后重试。");
+        }
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [date, initialDetail]);
+    },
+    [date, initialDetail],
+  );
 
   useEffect(() => {
     if (isSettingsLoading || !settings) return;
@@ -232,7 +236,10 @@ export function MomentDateDetail({ date }: { date: string }) {
           <>
             <header className="mb-6 flex items-start justify-between gap-4">
               <h2 className="text-[1.602rem] leading-[1.5] font-semibold">
-                {formatDateHeading(detail.date)}
+                {formatDateHeading(
+                  detail.date,
+                  settings?.format.weekdayLanguage,
+                )}
               </h2>
               <DateNavigation detail={detail} />
             </header>

@@ -653,6 +653,10 @@
             "$ref": "#/components/schemas/ContentSettings",
             "description": "内容读取与分页设置。"
           },
+          "format": {
+            "$ref": "#/components/schemas/FormatSettings",
+            "description": "日期格式设置。"
+          },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
@@ -732,12 +736,36 @@
             "minimum": 1,
             "maximum": 100,
             "description": "信息流每次加载数量。"
+          },
+          "shareToolbar": {
+            "type": "boolean",
+            "default": true,
+            "description": "分享页面是否显示底部工具栏；旧备份缺省时按显示恢复。"
           }
         },
         "required": [
           "public",
           "pageSize"
         ],
+        "additionalProperties": false
+      },
+      "FormatSettings": {
+        "type": "object",
+        "properties": {
+          "weekdayLanguage": {
+            "type": "string",
+            "enum": [
+              "zh",
+              "en",
+              "ja"
+            ],
+            "default": "zh",
+            "description": "日期标题中星期名称的显示语言。"
+          }
+        },
+        "default": {
+          "weekdayLanguage": "zh"
+        },
         "additionalProperties": false
       },
       "UpdateSettings": {
@@ -788,6 +816,24 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "shareToolbar": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "format": {
+            "type": "object",
+            "properties": {
+              "weekdayLanguage": {
+                "type": "string",
+                "enum": [
+                  "zh",
+                  "en",
+                  "ja"
+                ],
+                "description": "日期标题中星期名称的显示语言。"
               }
             },
             "additionalProperties": false

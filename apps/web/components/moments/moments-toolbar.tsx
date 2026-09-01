@@ -81,6 +81,14 @@ export function MomentsToolbar() {
   const [isRandomLoading, setIsRandomLoading] = useState(false);
   const isHome = pathname === "/";
   const isCreateAction = isAdmin && isHome;
+  // The share page is a standalone reading view reached only by its direct
+  // link, so its toolbar is opt-in through the content settings.
+  const isSharePage = pathname.startsWith("/m/");
+  const showToolbar =
+    !isCheckingAdmin &&
+    !isSettingsLoading &&
+    settings !== null &&
+    (!isSharePage || settings.content.shareToolbar);
   const openHome = () => {
     if (!isHome) {
       router.push("/");
@@ -126,7 +134,7 @@ export function MomentsToolbar() {
     <>
       <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4 md:top-auto md:bottom-6">
         <TransitionPresence
-          show={!isCheckingAdmin && !isSettingsLoading && settings !== null}
+          show={showToolbar}
           className="pointer-events-auto"
         >
           <nav aria-label="主要操作" className="flex items-center gap-3">
@@ -190,6 +198,7 @@ export function MomentsToolbar() {
           open={randomOpen}
           onOpenChange={setRandomOpen}
           onRequestAnother={() => void loadRandom(false)}
+          weekdayLanguage={settings?.format.weekdayLanguage}
         />
       ) : null}
     </>

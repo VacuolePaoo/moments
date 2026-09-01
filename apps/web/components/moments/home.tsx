@@ -79,42 +79,45 @@ export function MomentsHome() {
   const pageSize = settings?.content.pageSize ?? 20;
   const contentRequiresAdmin = settings?.content.public === false;
 
-  const loadInitial = useCallback(async (anchorDate?: string, token?: string) => {
-    const revisionAtStart = contentRevision.current;
-    const isBackgroundRefresh = !anchorDate && readCachedHomeFeed() !== null;
-    try {
-      let page = anchorDate
-        ? await retryRead(() =>
-            listPosts({ limit: pageSize, anchorDate }, token),
-          )
-        : await loadLatestHomeFeed(pageSize, token);
-      if (anchorDate && page.items.length === 0) {
-        page = await loadLatestHomeFeed(pageSize, token);
-      }
+  const loadInitial = useCallback(
+    async (anchorDate?: string, token?: string) => {
+      const revisionAtStart = contentRevision.current;
+      const isBackgroundRefresh = !anchorDate && readCachedHomeFeed() !== null;
+      try {
+        let page = anchorDate
+          ? await retryRead(() =>
+              listPosts({ limit: pageSize, anchorDate }, token),
+            )
+          : await loadLatestHomeFeed(pageSize, token);
+        if (anchorDate && page.items.length === 0) {
+          page = await loadLatestHomeFeed(pageSize, token);
+        }
 
-      // A publish/edit/delete completed while the refresh was in flight. Its
-      // local result is newer than this response, so keep it until next refresh.
-      if (contentRevision.current !== revisionAtStart) return;
+        // A publish/edit/delete completed while the refresh was in flight. Its
+        // local result is newer than this response, so keep it until next refresh.
+        if (contentRevision.current !== revisionAtStart) return;
 
-      setPosts(page.items);
-      setNextCursor(page.nextCursor);
-      setTargetDate(anchorDate ?? null);
-      setError(null);
-      scrollCompletedFor.current = null;
-      if (!anchorDate) {
-        writeCachedHomeFeed({
-          posts: page.items,
-          nextCursor: page.nextCursor,
-        });
+        setPosts(page.items);
+        setNextCursor(page.nextCursor);
+        setTargetDate(anchorDate ?? null);
+        setError(null);
+        scrollCompletedFor.current = null;
+        if (!anchorDate) {
+          writeCachedHomeFeed({
+            posts: page.items,
+            nextCursor: page.nextCursor,
+          });
+        }
+      } catch {
+        if (!isBackgroundRefresh || anchorDate) {
+          setError("内容加载失败，请稍后重试。");
+        }
+      } finally {
+        setIsInitialLoading(false);
       }
-    } catch {
-      if (!isBackgroundRefresh || anchorDate) {
-        setError("内容加载失败，请稍后重试。");
-      }
-    } finally {
-      setIsInitialLoading(false);
-    }
-  }, [pageSize]);
+    },
+    [pageSize],
+  );
 
   useEffect(() => {
     if (isSettingsLoading) return;
@@ -203,10 +206,7 @@ export function MomentsHome() {
         throw new Error("登录状态已失效。");
       }
       const page = await retryRead(() =>
-        listPosts(
-          { limit: pageSize, cursor: nextCursor },
-          token ?? undefined,
-        ),
+        listPosts({ limit: pageSize, cursor: nextCursor }, token ?? undefined),
       );
       setPosts((current) => mergePosts(current, page.items));
       setNextCursor(page.nextCursor);
@@ -328,8 +328,7 @@ export function MomentsHome() {
     posts.length === 0 &&
     nextCursor === null;
   const accessChecking = contentRequiresAdmin && isCheckingAdmin;
-  const accessRestricted =
-    contentRequiresAdmin && !isCheckingAdmin && !isAdmin;
+  const accessRestricted = contentRequiresAdmin && !isCheckingAdmin && !isAdmin;
   const showStarter =
     hasConfirmedEmpty && !isCheckingAdmin && isAdmin && !starterDismissed;
   const showVisitorEmpty =
@@ -450,6 +449,7 @@ export function MomentsHome() {
                 posts={visiblePosts}
                 isAdmin={isAdmin}
                 getToken={getToken}
+                weekdayLanguage={settings?.format.weekdayLanguage}
                 highlightDate={highlightDate}
                 isInitialLoading={
                   isInitialLoading || isSettingsLoading || accessChecking

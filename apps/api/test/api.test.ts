@@ -28,6 +28,8 @@ async function clearPosts() {
          rss_enabled = 1,
          content_public = 1,
          page_size = 20,
+         share_toolbar_enabled = 1,
+         weekday_language = 'zh',
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE id = 1`,
     ),
@@ -263,6 +265,25 @@ describe("Moments API", () => {
       env,
     );
     expect(administratorRead.status).toBe(200);
+
+    const updatedSettings = await app.request(
+      "/api/v1/settings",
+      jsonRequest("PATCH", {
+        content: { shareToolbar: false },
+        format: { weekdayLanguage: "ja" },
+      }),
+      env,
+    );
+    expect(updatedSettings.status).toBe(200);
+    await expect(updatedSettings.json()).resolves.toMatchObject({
+      content: { shareToolbar: false },
+      format: { weekdayLanguage: "ja" },
+    });
+    await expect(
+      env.DB.prepare(
+        "SELECT share_toolbar_enabled, weekday_language FROM settings WHERE id = 1",
+      ).first(),
+    ).resolves.toEqual({ share_toolbar_enabled: 0, weekday_language: "ja" });
   });
 
   it("exports a complete backup and clears data only after origin and image deletion checks", async () => {

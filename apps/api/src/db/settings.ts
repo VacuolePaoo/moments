@@ -1,5 +1,5 @@
 import { ApiError } from "../lib/errors";
-import type { AppSettings, UpdateSettings } from "../schemas";
+import type { AppSettings, UpdateSettings, WeekdayLanguage } from "../schemas";
 
 interface SettingsRow {
   show_site_name: number;
@@ -11,11 +11,23 @@ interface SettingsRow {
   content_public: number;
   voice_enabled: number;
   page_size: number;
+  share_toolbar_enabled: number;
+  weekday_language: string;
   updated_at: string;
 }
 
 function toBoolean(value: number): boolean {
   return value === 1;
+}
+
+function toWeekdayLanguage(value: string): WeekdayLanguage {
+  switch (value) {
+    case "en":
+    case "ja":
+      return value;
+    default:
+      return "zh";
+  }
 }
 
 // Migration 0005 requires at least one stored character. A single space keeps
@@ -40,6 +52,10 @@ function toAppSettings(row: SettingsRow): AppSettings {
       public: toBoolean(row.content_public),
       voice: toBoolean(row.voice_enabled),
       pageSize: row.page_size,
+      shareToolbar: toBoolean(row.share_toolbar_enabled),
+    },
+    format: {
+      weekdayLanguage: toWeekdayLanguage(row.weekday_language),
     },
     updatedAt: row.updated_at,
   };
@@ -58,6 +74,8 @@ export async function getAppSettings(db: D1Database): Promise<AppSettings> {
          content_public,
          voice_enabled,
          page_size,
+         share_toolbar_enabled,
+         weekday_language,
          updated_at
        FROM settings
        WHERE id = 1`,
@@ -94,6 +112,12 @@ export async function updateAppSettings(
       public: update.content?.public ?? current.content.public,
       voice: update.content?.voice ?? current.content.voice,
       pageSize: update.content?.pageSize ?? current.content.pageSize,
+      shareToolbar:
+        update.content?.shareToolbar ?? current.content.shareToolbar,
+    },
+    format: {
+      weekdayLanguage:
+        update.format?.weekdayLanguage ?? current.format.weekdayLanguage,
     },
     updatedAt: new Date().toISOString(),
   };
@@ -111,6 +135,8 @@ export async function updateAppSettings(
          content_public = ?,
          voice_enabled = ?,
          page_size = ?,
+         share_toolbar_enabled = ?,
+         weekday_language = ?,
          updated_at = ?
        WHERE id = 1`,
     )
@@ -124,6 +150,8 @@ export async function updateAppSettings(
       Number(next.content.public),
       Number(next.content.voice),
       next.content.pageSize,
+      Number(next.content.shareToolbar),
+      next.format.weekdayLanguage,
       next.updatedAt,
     )
     .run();

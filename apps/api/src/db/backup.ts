@@ -190,6 +190,8 @@ export async function restoreBackup(
            content_public = ?,
            voice_enabled = ?,
            page_size = ?,
+           share_toolbar_enabled = ?,
+           weekday_language = ?,
            updated_at = ?
          WHERE id = 1`,
       )
@@ -203,6 +205,8 @@ export async function restoreBackup(
         Number(backup.settings.content.public),
         Number(backup.settings.content.voice),
         backup.settings.content.pageSize,
+        Number(backup.settings.content.shareToolbar),
+        backup.settings.format.weekdayLanguage,
         backup.settings.updatedAt,
       ),
     db.prepare("DELETE FROM statistics_daily"),

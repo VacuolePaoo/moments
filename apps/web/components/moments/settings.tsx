@@ -38,6 +38,13 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -71,6 +78,7 @@ import {
   type RestoreBackupPreview,
   type RestoreBackupResult,
   type UpdateSettings,
+  type WeekdayLanguage,
 } from "./api";
 import { useAdminAccess } from "./auth-controls";
 import { clearCachedHomeFeed } from "./feed-cache";
@@ -82,6 +90,15 @@ const CLEAR_CONFIRMATION = "确认清空全部说说";
 const MAX_RESTORE_FILE_BYTES = 15 * 1024 * 1024;
 const BODY_TEXT_CLASS = "text-base leading-6 font-normal";
 const SECTION_TITLE_CLASS = "text-[1.602rem] leading-[1.5] font-semibold";
+
+const WEEKDAY_LANGUAGE_OPTIONS: Array<{
+  value: WeekdayLanguage;
+  label: string;
+}> = [
+  { value: "zh", label: "中文（星期四）" },
+  { value: "en", label: "英文（Thursday）" },
+  { value: "ja", label: "日文（木曜日）" },
+];
 
 interface RestoreCandidate {
   backup: CompleteBackup;
@@ -337,13 +354,17 @@ export function MomentsSettings() {
 
         {!isLoading && !error && settings ? (
           <Tabs defaultValue="system" className="w-full">
-            <TabsList className="grid h-auto w-full grid-cols-3">
+            <TabsList className="grid h-auto w-full grid-cols-4">
               <TabsTrigger value="system">系统</TabsTrigger>
+              <TabsTrigger value="personalization">个性化</TabsTrigger>
               <TabsTrigger value="features">功能</TabsTrigger>
               <TabsTrigger value="content">内容</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="system" className="flex flex-col gap-12 pt-8">
+            <TabsContent
+              value="personalization"
+              className="flex flex-col gap-12 pt-8"
+            >
               <SiteInformationSection
                 settings={settings}
                 savedSettings={savedSettings ?? settings}
@@ -390,6 +411,20 @@ export function MomentsSettings() {
                   )
                 }
               />
+              <DateFormatSection
+                settings={settings}
+                pendingAction={pendingAction}
+                onWeekdayLanguageChange={(language) =>
+                  void save(
+                    { format: { weekdayLanguage: language } },
+                    "weekday-language",
+                    "星期显示格式已保存。",
+                  )
+                }
+              />
+            </TabsContent>
+
+            <TabsContent value="system" className="flex flex-col gap-12 pt-8">
               <RuntimeStatusSection
                 health={health}
                 fileUploadConfigured={fileUploadConfigured}
@@ -444,6 +479,13 @@ export function MomentsSettings() {
                     { content: { voice: enabled } },
                     "content-voice",
                     "语音发布设置已保存。",
+                  )
+                }
+                onToggleShareToolbar={(enabled) =>
+                  void save(
+                    { content: { shareToolbar: enabled } },
+                    "content-share-toolbar",
+                    "分享页面底栏设置已保存。",
                   )
                 }
                 onSavePageSize={() =>
@@ -1014,12 +1056,57 @@ function FeatureSwitchField({
   );
 }
 
+function DateFormatSection({
+  settings,
+  pendingAction,
+  onWeekdayLanguageChange,
+}: {
+  settings: AppSettings;
+  pendingAction: string | null;
+  onWeekdayLanguageChange: (language: WeekdayLanguage) => void;
+}) {
+  return (
+    <SettingsSection id="date-format-heading" title="日期格式">
+      <FieldGroup>
+        <Field orientation="horizontal" data-disabled={pendingAction !== null}>
+          <FieldContent>
+            <FieldTitle className={BODY_TEXT_CLASS}>星期显示格式</FieldTitle>
+          </FieldContent>
+          <Select
+            value={settings.format.weekdayLanguage}
+            disabled={pendingAction !== null}
+            onValueChange={(value) =>
+              onWeekdayLanguageChange(value as WeekdayLanguage)
+            }
+          >
+            <SelectTrigger aria-label="星期显示格式" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WEEKDAY_LANGUAGE_OPTIONS.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  label={option.label}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </FieldGroup>
+    </SettingsSection>
+  );
+}
+
 function ContentSettingsSection({
   settings,
   pendingAction,
   onChange,
   onTogglePublic,
   onToggleVoice,
+  onToggleShareToolbar,
   onSavePageSize,
 }: {
   settings: AppSettings;
@@ -1027,6 +1114,7 @@ function ContentSettingsSection({
   onChange: (settings: AppSettings) => void;
   onTogglePublic: (enabled: boolean) => void;
   onToggleVoice: (enabled: boolean) => void;
+  onToggleShareToolbar: (enabled: boolean) => void;
   onSavePageSize: () => void;
 }) {
   return (
@@ -1098,6 +1186,20 @@ function ContentSettingsSection({
             </Button>
           </div>
           <FieldDescription>允许设置 1–100 条，默认 20 条。</FieldDescription>
+        </Field>
+        <Field orientation="horizontal" data-disabled={pendingAction !== null}>
+          <FieldContent>
+            <FieldTitle className={BODY_TEXT_CLASS}>
+              分享页面显示底栏
+            </FieldTitle>
+            <FieldDescription>关闭后无法通过底栏回到首页</FieldDescription>
+          </FieldContent>
+          <Switch
+            aria-label="分享页面显示底栏"
+            checked={settings.content.shareToolbar}
+            disabled={pendingAction !== null}
+            onCheckedChange={onToggleShareToolbar}
+          />
         </Field>
       </FieldGroup>
     </SettingsSection>

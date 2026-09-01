@@ -604,6 +604,9 @@
           "content": {
             "$ref": "#/components/schemas/ContentSettings"
           },
+          "format": {
+            "$ref": "#/components/schemas/FormatSettings"
+          },
           "updatedAt": {
             "type": "string",
             "format": "date-time"
@@ -673,12 +676,35 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "shareToolbar": {
+            "type": "boolean",
+            "default": true
           }
         },
         "required": [
           "public",
           "pageSize"
         ],
+        "additionalProperties": false
+      },
+      "FormatSettings": {
+        "type": "object",
+        "properties": {
+          "weekdayLanguage": {
+            "type": "string",
+            "enum": [
+              "zh",
+              "en",
+              "ja"
+            ],
+            "default": "zh",
+            "description": "Display language used for weekday names."
+          }
+        },
+        "default": {
+          "weekdayLanguage": "zh"
+        },
         "additionalProperties": false
       },
       "UpdateSettings": {
@@ -729,6 +755,24 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "shareToolbar": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "format": {
+            "type": "object",
+            "properties": {
+              "weekdayLanguage": {
+                "type": "string",
+                "enum": [
+                  "zh",
+                  "en",
+                  "ja"
+                ],
+                "description": "Display language used for weekday names."
               }
             },
             "additionalProperties": false

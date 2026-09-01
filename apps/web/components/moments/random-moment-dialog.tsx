@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 
-import type { DateDetail } from "./api";
+import type { DateDetail, WeekdayLanguage } from "./api";
 import { formatDateHeading } from "./date";
 import { MomentReadOnly } from "./moment-item";
 
@@ -23,12 +23,14 @@ export function RandomMomentDialog({
   open,
   onOpenChange,
   onRequestAnother,
+  weekdayLanguage,
 }: {
   detail: DateDetail;
   isRefreshing: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRequestAnother: () => void;
+  weekdayLanguage?: WeekdayLanguage;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -37,7 +39,7 @@ export function RandomMomentDialog({
         className="w-full gap-4 bg-transparent p-0 ring-0 sm:max-w-[640px]"
       >
         <DialogTitle className="text-[1.602rem] leading-[1.5] font-semibold">
-          {formatDateHeading(detail.date)}
+          {formatDateHeading(detail.date, weekdayLanguage)}
         </DialogTitle>
         <DialogDescription className="sr-only">
           随机展示一个日期及当天发布的全部 Moment。
