@@ -39,8 +39,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-
 import {
   MomentsApiError,
   deletePostImage,
@@ -410,23 +408,22 @@ export function MomentItem({
   return (
     <article className="group/moment relative min-w-0">
       {showTime && !isAudio ? (
-        <div className="mb-2 flex min-h-8 items-center gap-4">
+        <div className="mb-2 flex min-h-8 items-center justify-between gap-4">
           <MomentTime post={post} />
+          <TransitionPresence
+            show={!isEditing}
+            animateOnMount={false}
+            className={`shrink-0 ${hoverRevealClasses}`}
+          >
+            <MomentActions
+              post={post}
+              isAdmin={isAdmin}
+              onEdit={beginEditing}
+              onDelete={onDelete}
+            />
+          </TransitionPresence>
         </div>
       ) : null}
-
-      <TransitionPresence
-        show={!isEditing && !isAudio}
-        animateOnMount={false}
-        className={`absolute top-0 right-0 z-10 shrink-0 ${hoverRevealClasses}`}
-      >
-        <MomentActions
-          post={post}
-          isAdmin={isAdmin}
-          onEdit={beginEditing}
-          onDelete={onDelete}
-        />
-      </TransitionPresence>
 
       {isEditing ? (
         <form
@@ -506,9 +503,7 @@ export function MomentItem({
           </div>
         </form>
       ) : (
-        <div
-          className={cn("min-w-0 max-w-full", !isAudio ? "pr-10" : undefined)}
-        >
+        <div className="min-w-0 max-w-full">
           <MomentBody
             post={post}
             eagerImages={eagerImages}

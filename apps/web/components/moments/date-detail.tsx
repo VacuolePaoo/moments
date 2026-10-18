@@ -252,7 +252,7 @@ export function MomentDateDetail({ date }: { date: string }) {
                     post={post}
                     isAdmin={isAdmin}
                     getToken={getToken}
-                    showTime={detail.items.length > 1}
+                    showTime
                     showEdited
                     eagerImages={index === 0}
                     onUpdated={handleUpdated}
