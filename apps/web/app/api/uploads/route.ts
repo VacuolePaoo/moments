@@ -5,12 +5,43 @@ interface ImgBedUploadResult {
   publicUrl?: unknown;
 }
 
+interface WorkerErrorBody {
+  error?: {
+    code?: unknown;
+    message?: unknown;
+  };
+  requestId?: unknown;
+}
+
+class WorkerAuthenticationError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code?: string,
+    readonly requestId?: string,
+    message?: string,
+  ) {
+    super(message);
+    this.name = "WorkerAuthenticationError";
+  }
+}
+
 const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 const MAX_RECORDING_BYTES = 32 * 1024 * 1024;
 const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 1024 * 1024;
 
-function jsonError(status: number, message: string) {
-  return Response.json({ error: { message } }, { status });
+function jsonError(
+  status: number,
+  message: string,
+  code?: string,
+  requestId?: string,
+) {
+  return Response.json(
+    {
+      error: { ...(code ? { code } : {}), message },
+      ...(requestId ? { requestId } : {}),
+    },
+    { status },
+  );
 }
 
 function imgBedBaseUrl(): string | null {
@@ -29,16 +60,47 @@ async function isAdministrator(token: string): Promise<boolean> {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
-  if (!response.ok) return false;
+  if (!response.ok) {
+    const body: WorkerErrorBody = await response.json().catch(() => ({}));
+    const code = typeof body.error?.code === "string" ? body.error.code : undefined;
+    const message =
+      typeof body.error?.message === "string"
+        ? body.error.message
+        : "Worker 未返回可识别的错误原因。";
+    const requestId =
+      typeof body.requestId === "string" ? body.requestId : undefined;
+    throw new WorkerAuthenticationError(
+      response.status,
+      code,
+      requestId,
+      message,
+    );
+  }
   const status: unknown = await response.json();
-  return (
+  const isAdministrator =
     typeof status === "object" &&
     status !== null &&
     "authenticated" in status &&
     status.authenticated === true &&
     "isAdmin" in status &&
-    status.isAdmin === true
-  );
+    status.isAdmin === true;
+  if (
+    !isAdministrator &&
+    (!status ||
+      typeof status !== "object" ||
+      !("authenticated" in status) ||
+      status.authenticated !== true ||
+      !("isAdmin" in status) ||
+      typeof status.isAdmin !== "boolean")
+  ) {
+    throw new WorkerAuthenticationError(
+      502,
+      "INVALID_AUTH_STATUS",
+      undefined,
+      "Worker 返回了无效的管理员身份校验结果。",
+    );
+  }
+  return isAdministrator;
 }
 
 function resolveUploadedUrl(
@@ -74,8 +136,28 @@ export async function POST(request: Request) {
     if (!(await isAdministrator(token))) {
       return jsonError(403, "只有管理员可以上传文件。");
     }
-  } catch {
-    return jsonError(502, "暂时无法验证管理员身份。");
+  } catch (error) {
+    if (error instanceof WorkerAuthenticationError) {
+      const details = [
+        `Worker HTTP ${error.status}`,
+        error.code,
+        error.message,
+        error.requestId ? `请求 ID：${error.requestId}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("；");
+      return jsonError(
+        error.status,
+        `管理员身份校验失败：${details}`,
+        error.code,
+        error.requestId,
+      );
+    }
+    return jsonError(
+      502,
+      `无法连接 Worker 以验证管理员身份：${error instanceof Error ? error.message : "未知错误。"}`,
+      "WORKER_AUTH_UNREACHABLE",
+    );
   }
 
   const baseUrl = imgBedBaseUrl();
